@@ -8,7 +8,9 @@ authentication, including JWT token generation.
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from prisma import Prisma
+from prisma.errors import PrismaError
 from datetime import timedelta
+import logging
 
 from schemas.user import UserCreate, UserOut
 from schemas.auth import Token
@@ -16,6 +18,9 @@ from services.auth import verify_password, get_password_hash, create_access_toke
 from services.database import get_prisma
 from config import settings
 
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -40,25 +45,45 @@ async def signup(
         
     Raises:
         HTTPException: 409 Conflict if email already registered
+        HTTPException: 500 Internal Server Error if database operation fails
     """
-    # Check if user already exists
-    existing_user = await prisma.user.find_unique(where={"email": user_data.email})
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered"
+    try:
+        # Check if user already exists
+        existing_user = await prisma.user.find_unique(where={"email": user_data.email})
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already registered"
+            )
+        
+        # Hash password and create user
+        hashed_password = get_password_hash(user_data.password)
+        user = await prisma.user.create(
+            data={
+                "email": user_data.email,
+                "hashedPassword": hashed_password
+            }
         )
+        
+        return UserOut.model_validate(user)
     
-    # Hash password and create user
-    hashed_password = get_password_hash(user_data.password)
-    user = await prisma.user.create(
-        data={
-            "email": user_data.email,
-            "hashedPassword": hashed_password
-        }
-    )
-    
-    return UserOut.model_validate(user)
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 409 Conflict)
+        raise
+    except PrismaError as e:
+        # Log database errors and return 500
+        logger.error(f"Database error during signup: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while creating the user account"
+        )
+    except Exception as e:
+        # Log unexpected errors and return 500
+        logger.error(f"Unexpected error during signup: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred"
+        )
 
 
 @router.post("/login", response_model=Token)
@@ -82,30 +107,50 @@ async def login(
     Raises:
         HTTPException: 401 Unauthorized if credentials invalid
         HTTPException: 400 Bad Request if user account is inactive
+        HTTPException: 500 Internal Server Error if database operation fails
     """
-    # Find user by email (username field in OAuth2 form)
-    user = await prisma.user.find_unique(where={"email": form_data.username})
-    
-    # Verify user exists and password is correct
-    if not user or not verify_password(form_data.password, user.hashedPassword):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
+    try:
+        # Find user by email (username field in OAuth2 form)
+        user = await prisma.user.find_unique(where={"email": form_data.username})
+        
+        # Verify user exists and password is correct
+        if not user or not verify_password(form_data.password, user.hashedPassword):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Check if user is active
+        if not user.isActive:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Inactive user"
+            )
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+        access_token = create_access_token(
+            data={"sub": user.email},
+            expires_delta=access_token_expires
         )
+        
+        return Token(access_token=access_token)
     
-    # Check if user is active
-    if not user.isActive:
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 401, 400)
+        raise
+    except PrismaError as e:
+        # Log database errors and return 500
+        logger.error(f"Database error during login: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing login"
         )
-    
-    # Create access token
-    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
-    access_token = create_access_token(
-        data={"sub": user.email},
-        expires_delta=access_token_expires
-    )
-    
-    return Token(access_token=access_token)
+    except Exception as e:
+        # Log unexpected errors and return 500
+        logger.error(f"Unexpected error during login: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred"
+        )

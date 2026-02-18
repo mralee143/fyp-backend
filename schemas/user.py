@@ -5,7 +5,7 @@ This module defines all schemas related to user data, including
 registration, login, and user profile responses.
 """
 
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from datetime import datetime
 
 
@@ -45,11 +45,11 @@ class UserOut(UserBase):
     Excludes password-related fields for security.
     """
     id: int
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
+    is_active: bool = Field(alias="isActive")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
     
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class UserInDB(UserOut):

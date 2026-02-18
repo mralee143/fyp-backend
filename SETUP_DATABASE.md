@@ -1,117 +1,194 @@
-# Database Setup Instructions
+# PostgreSQL Database Setup Guide
 
-## PostgreSQL Setup with Docker Compose
+This guide will help you set up PostgreSQL for the FastAPI authentication application.
 
-### 1. Start PostgreSQL Container
+## Option 1: Using Docker (Recommended)
 
-```bash
-docker-compose up -d
-```
+### Prerequisites
+- Docker Desktop installed and running
 
-This will start a PostgreSQL 14 container with:
-- **Database Name**: vision_db
-- **Username**: root
-- **Password**: postgres
-- **Port**: 5432 (mapped to localhost)
+### Steps
 
-### 2. Verify Container is Running
+1. **Start PostgreSQL using Docker Compose**
+   ```bash
+   docker-compose up -d
+   ```
 
-```bash
-docker-compose ps
-```
+2. **Verify the database is running**
+   ```bash
+   docker ps
+   ```
+   You should see a container named `postgres` running.
 
-You should see the `vision_db_postgres` container running.
+3. **The database is now ready!**
+   - Database name: `vision_db`
+   - Username: `root`
+   - Password: `postgres`
+   - Port: `5432`
+   - Connection string is already configured in `.env`
 
-### 3. Check Container Logs
+4. **Connect to the database (optional)**
+   ```bash
+   docker exec -it postgres psql -U root -d vision_db
+   ```
 
-```bash
-docker-compose logs postgres
-```
+5. **Stop the database when done**
+   ```bash
+   docker-compose down
+   ```
 
-Look for "database system is ready to accept connections"
+## Option 2: Local PostgreSQL Installation
 
-### 4. Install Prisma (if not already installed)
+### Windows
 
-```bash
-pip install prisma
-```
+1. **Download PostgreSQL**
+   - Visit https://www.postgresql.org/download/windows/
+   - Download the installer (version 14 or higher)
+   - Run the installer and follow the setup wizard
 
-### 5. Test Database Connection
+2. **During installation**
+   - Set a password for the `postgres` superuser (remember this!)
+   - Keep the default port `5432`
+   - Install pgAdmin 4 (optional, but useful for GUI management)
+
+3. **Create the database**
+   - Open Command Prompt or PowerShell
+   - Connect to PostgreSQL:
+     ```bash
+     psql -U postgres
+     ```
+   - Create the database:
+     ```sql
+     CREATE DATABASE vision_db;
+     CREATE USER root WITH PASSWORD 'postgres';
+     GRANT ALL PRIVILEGES ON DATABASE vision_db TO root;
+     \q
+     ```
+
+4. **Update `.env` file**
+   ```env
+   DATABASE_URL=postgresql://root:postgres@localhost:5432/vision_db
+   ```
+
+### macOS
+
+1. **Install PostgreSQL using Homebrew**
+   ```bash
+   brew install postgresql@14
+   brew services start postgresql@14
+   ```
+
+2. **Create the database**
+   ```bash
+   psql postgres
+   ```
+   ```sql
+   CREATE DATABASE vision_db;
+   CREATE USER root WITH PASSWORD 'postgres';
+   GRANT ALL PRIVILEGES ON DATABASE vision_db TO root;
+   \q
+   ```
+
+3. **Update `.env` file**
+   ```env
+   DATABASE_URL=postgresql://root:postgres@localhost:5432/vision_db
+   ```
+
+### Linux (Ubuntu/Debian)
+
+1. **Install PostgreSQL**
+   ```bash
+   sudo apt update
+   sudo apt install postgresql postgresql-contrib
+   sudo systemctl start postgresql
+   sudo systemctl enable postgresql
+   ```
+
+2. **Create the database**
+   ```bash
+   sudo -u postgres psql
+   ```
+   ```sql
+   CREATE DATABASE vision_db;
+   CREATE USER root WITH PASSWORD 'postgres';
+   GRANT ALL PRIVILEGES ON DATABASE vision_db TO root;
+   \q
+   ```
+
+3. **Update `.env` file**
+   ```env
+   DATABASE_URL=postgresql://root:postgres@localhost:5432/vision_db
+   ```
+
+## Verify Database Connection
+
+After setting up PostgreSQL, verify the connection:
 
 ```bash
 python test_db_connection.py
 ```
 
-Expected output:
-```
-✅ Configuration loaded successfully!
-✅ Successfully connected to PostgreSQL database!
-✅ PostgreSQL version: PostgreSQL 14.x ...
-```
+This script will test the database connection and confirm everything is working.
 
-## Database Management Commands
+## Next Steps
 
-### Stop the database
-```bash
-docker-compose stop
-```
+Once the database is set up and verified:
 
-### Start the database (after stopping)
-```bash
-docker-compose start
-```
+1. **Generate Prisma Client**
+   ```bash
+   prisma generate
+   ```
 
-### Remove the database (WARNING: deletes all data)
-```bash
-docker-compose down -v
-```
+2. **Push the schema to the database**
+   ```bash
+   prisma db push
+   ```
 
-### Access PostgreSQL CLI
-```bash
-docker exec -it vision_db_postgres psql -U root -d vision_db
-```
-
-### View database logs
-```bash
-docker-compose logs -f postgres
-```
-
-## Connection Details
-
-- **Host**: localhost
-- **Port**: 5432
-- **Database**: vision_db
-- **Username**: root
-- **Password**: postgres
-- **Connection String**: `postgresql://root:postgres@localhost:5432/vision_db`
+3. **Run the application**
+   ```bash
+   uvicorn main:app --reload
+   ```
 
 ## Troubleshooting
 
-### Port 5432 already in use
-If you have another PostgreSQL instance running:
-```bash
-# Stop other PostgreSQL services
-# Or change the port in docker-compose.yml:
-# ports:
-#   - "5433:5432"
-# Then update DATABASE_URL in .env to use port 5433
-```
+### Connection Refused
+- Ensure PostgreSQL is running
+- Check if the port 5432 is not blocked by firewall
+- Verify the DATABASE_URL in `.env` matches your setup
 
-### Container won't start
-```bash
-# Check logs
-docker-compose logs postgres
+### Authentication Failed
+- Double-check username and password in DATABASE_URL
+- Ensure the user has proper permissions on the database
 
-# Remove and recreate
-docker-compose down -v
-docker-compose up -d
-```
+### Database Does Not Exist
+- Create the database using the SQL commands above
+- Ensure the database name in DATABASE_URL matches the created database
 
-### Connection refused
-```bash
-# Wait for database to be ready
-docker-compose logs postgres | grep "ready to accept connections"
+### Docker Issues
+- Ensure Docker Desktop is running
+- Try `docker-compose down` and then `docker-compose up -d` again
+- Check logs: `docker-compose logs postgres`
 
-# Check health status
-docker inspect vision_db_postgres | grep Health
-```
+## Database Management Tools
+
+### Command Line
+- **psql**: PostgreSQL interactive terminal
+  ```bash
+  psql -U root -d vision_db
+  ```
+
+### GUI Tools
+- **pgAdmin 4**: Free, open-source PostgreSQL management tool
+- **DBeaver**: Universal database tool
+- **DataGrip**: JetBrains IDE for databases (paid)
+
+## Security Notes
+
+⚠️ **Important**: The default credentials in this setup are for development only!
+
+For production:
+1. Use strong, unique passwords
+2. Store credentials in secure secret management systems
+3. Use SSL/TLS for database connections
+4. Restrict database access by IP address
+5. Regularly update PostgreSQL to the latest version

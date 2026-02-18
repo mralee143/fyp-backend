@@ -26,28 +26,36 @@ A modern user authentication system built with FastAPI and Prisma ORM, providing
 ## Project Structure
 
 ```
-├── main.py                  # Application entry point (pending implementation)
+├── main.py                  # Application entry point with lifespan management
 ├── config.py                # Configuration management with Pydantic Settings
 ├── prisma/
 │   └── schema.prisma       # Database schema definition
-├── routes/                  # API route handlers (pending implementation)
-│   ├── auth.py             # Authentication endpoints
-│   └── users.py            # User management endpoints
+├── routes/
+│   ├── auth.py             # Authentication endpoints (signup, login)
+│   └── users.py            # User management endpoints (profile)
 ├── schemas/
 │   ├── user.py             # User-related Pydantic schemas
 │   └── auth.py             # Auth-related Pydantic schemas
 ├── services/
 │   ├── auth.py             # Password hashing and JWT token logic
 │   └── database.py         # Prisma client management
-├── middleware/              # (pending implementation)
+├── middleware/
 │   └── auth.py             # JWT authentication middleware
-└── tests/
-    ├── conftest.py         # Shared test fixtures
-    ├── test_config_properties.py
-    ├── test_email_validation_properties.py
-    ├── test_jwt_properties.py
-    ├── test_password_hashing_properties.py
-    └── test_user_properties.py
+├── tests/
+    ├── conftest.py                        # Shared test fixtures
+    ├── test_api_documentation.py          # API documentation endpoint tests
+    ├── test_config_properties.py          # Configuration validation tests
+    ├── test_email_validation_properties.py # Email format validation tests
+    ├── test_jwt_properties.py             # JWT token tests
+    ├── test_password_hashing_properties.py # Password hashing tests
+    ├── test_user_properties.py            # User model tests
+    ├── test_registration_properties.py    # User registration tests
+    ├── test_login_properties.py           # User login tests
+    ├── test_profile_access_properties.py  # Profile access tests
+    ├── test_sensitive_data_exclusion_properties.py # Sensitive data exclusion tests
+    ├── test_auth_middleware_properties.py # Auth middleware tests
+    ├── test_error_handling.py             # Error handling tests
+    └── test_integration.py                # End-to-end integration tests
 ```
 
 ## Setup
@@ -81,25 +89,34 @@ prisma generate
 prisma db push
 ```
 
+5. Verify database schema (optional):
+```bash
+python verify_schema.py
+```
+
 ## Development Status
 
-This project is currently undergoing migration from Flask + SQLAlchemy to FastAPI + Prisma ORM.
+This project has successfully migrated from Flask + SQLAlchemy to FastAPI + Prisma ORM.
 
-### Completed (Tasks 1-7)
+### Completed (Tasks 1-15.1)
 ✅ Project infrastructure and dependencies  
 ✅ Configuration management with Pydantic Settings  
 ✅ Prisma schema definition and client generation  
 ✅ Pydantic schemas for validation  
 ✅ Authentication service (password hashing, JWT tokens)  
 ✅ Database service (Prisma client management)  
+✅ Authentication middleware (JWT token validation)  
+✅ Authentication routes (signup, login)  
+✅ User routes (profile endpoint)  
+✅ FastAPI application with lifespan management  
+✅ API documentation endpoints (/docs, /redoc, /openapi.json)  
 ✅ Comprehensive property-based tests using Hypothesis  
+✅ Error handling for all routes  
+✅ Database setup and migrations  
+✅ End-to-end integration tests  
 
 ### In Progress
-🚧 Authentication middleware (Task 8)  
-🚧 Authentication routes (Task 9)  
-🚧 User routes (Task 10)  
-🚧 FastAPI application setup (Task 12)  
-🚧 Error handling (Task 13)  
+🚧 Final system verification (Task 16)  
 
 ### Testing
 
@@ -113,11 +130,57 @@ Run with coverage:
 pytest --cov
 ```
 
-The project includes both unit tests and property-based tests using Hypothesis to ensure correctness across a wide range of inputs. All core services (configuration, password hashing, JWT tokens, database operations) are fully tested.
+Run specific test categories:
+```bash
+# Property-based tests only
+pytest tests/test_*_properties.py
+
+# Integration tests only
+pytest tests/test_integration.py
+
+# Error handling tests
+pytest tests/test_error_handling.py
+```
+
+The project includes comprehensive testing:
+- **Property-based tests** using Hypothesis validate system behavior across hundreds of randomly generated inputs
+- **Integration tests** verify complete user flows from signup through login to profile access
+- **Unit tests** for error handling, API documentation, and edge cases
+- All core services, middleware, routes, and API endpoints are fully tested
+
+### Property-Based Testing
+
+The test suite uses Hypothesis for property-based testing, which validates system behavior across hundreds of randomly generated inputs. This approach catches edge cases that traditional unit tests might miss.
+
+Tested properties include:
+- **Password Hashing**: Passwords never stored in plain text, verification correctness
+- **JWT Tokens**: Signature validity, user identity preservation, expiration handling
+- **Email Validation**: Invalid email format rejection
+- **User Registration**: Valid registration creates accounts, duplicate emails rejected
+- **User Login**: Valid credentials return tokens, invalid credentials rejected
+- **Profile Access**: Authenticated users can access profiles, inactive users rejected
+- **Auth Middleware**: Invalid tokens rejected with 401 status
+- **Sensitive Data Exclusion**: Hashed passwords never appear in API responses (attributes, serialized dicts, or JSON)
+- **Configuration**: Missing required environment variables fail startup
+- **Database**: Auto-incrementing IDs, unique email constraints
+
+Each property test runs 100+ examples by default to ensure robust validation.
+
+### Integration Testing
+
+End-to-end integration tests verify complete user flows:
+- **Complete signup → login → profile flow**: Tests the entire user journey from registration through authentication to profile access
+- **Invalid token handling**: Verifies rejection of missing, invalid, malformed, and empty tokens
+- **Duplicate registration**: Ensures duplicate email addresses are properly rejected with 409 Conflict
+- **Invalid credentials**: Tests login failures with non-existent emails and wrong passwords
+- **Inactive user handling**: Verifies inactive users cannot log in
+- **Expired token rejection**: Tests that expired JWT tokens are properly rejected
+- **Email validation**: Validates that invalid email formats return 422 with field-level error details
+- **API documentation**: Confirms Swagger UI, ReDoc, and OpenAPI schema endpoints are accessible
+
+Integration tests use FastAPI's TestClient to make real HTTP requests to the API, testing the full stack from routes through middleware to database operations.
 
 ## Running the Application
-
-⚠️ **Note**: The FastAPI application (`main.py`) is not yet fully implemented. The following commands will be available once migration is complete:
 
 Start the development server:
 ```bash
@@ -126,6 +189,11 @@ uvicorn main:app --reload
 
 The API will be available at `http://localhost:8000`
 
+The application automatically:
+- Connects to the database on startup
+- Disconnects from the database on shutdown
+- Provides interactive API documentation at `/docs` and `/redoc`
+
 ## API Documentation
 
 Once the server is running, access the interactive API documentation:
@@ -133,6 +201,9 @@ Once the server is running, access the interactive API documentation:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 - OpenAPI Schema: `http://localhost:8000/openapi.json`
+- Health Check: `http://localhost:8000/`
+
+The FastAPI application automatically generates comprehensive API documentation based on your route definitions, Pydantic schemas, and docstrings.
 
 ## API Endpoints
 
@@ -140,17 +211,20 @@ Once the server is running, access the interactive API documentation:
 
 - `POST /auth/signup` - Register a new user
   - Request: `{ "email": "user@example.com", "password": "securepass" }`
-  - Response: User object with id, email, isActive, timestamps
+  - Response: `201 Created` with user object (id, email, is_active, created_at, updated_at)
+  - Errors: `409 Conflict` if email already registered, `422 Unprocessable Entity` for validation errors
 
 - `POST /auth/login` - Authenticate and receive JWT token
-  - Request: Form data with username (email) and password
+  - Request: Form data with `username` (email) and `password` fields (OAuth2 password flow)
   - Response: `{ "access_token": "jwt_token", "token_type": "bearer" }`
+  - Errors: `401 Unauthorized` for invalid credentials, `400 Bad Request` for inactive users
 
 ### User Management
 
 - `GET /users/me` - Get current user profile (requires authentication)
   - Headers: `Authorization: Bearer <jwt_token>`
-  - Response: User object
+  - Response: User object (id, email, is_active, created_at, updated_at)
+  - Errors: `401 Unauthorized` for invalid/missing token, `400 Bad Request` for inactive users
 
 ## Testing
 
@@ -164,18 +238,40 @@ Run with coverage:
 pytest --cov
 ```
 
-The project includes both unit tests and property-based tests using Hypothesis to ensure correctness across a wide range of inputs.
+Run specific test categories:
+```bash
+# Property-based tests only
+pytest tests/test_*_properties.py
+
+# Integration tests only
+pytest tests/test_integration.py
+
+# Error handling tests
+pytest tests/test_error_handling.py
+
+# API documentation tests
+pytest tests/test_api_documentation.py
+```
+
+The project includes comprehensive testing:
+- **Property-based tests** using Hypothesis validate system behavior across hundreds of randomly generated inputs
+- **Integration tests** verify complete user flows from signup through login to profile access
+- **Unit tests** for error handling, API documentation, and edge cases
+- All core services, middleware, routes, and API endpoints are fully tested
 
 ## Security Features
 
 - Passwords are hashed using bcrypt with automatic salt generation
 - Bcrypt's 72-byte limit is properly handled by truncating input
-- JWT tokens with configurable expiration
-- Protected endpoints require valid authentication
+- JWT tokens with configurable expiration (default: 30 minutes)
+- Protected endpoints require valid JWT authentication via OAuth2 bearer tokens
 - Email format validation using Pydantic's EmailStr
 - Duplicate email prevention via database unique constraint
-- Sensitive data (passwords) excluded from API responses
+- Sensitive data (hashed passwords) excluded from API responses
 - Token signature validation prevents tampering
+- Expired token rejection with proper error handling
+- Inactive user accounts cannot access protected endpoints
+- Auto-incrementing user IDs for database integrity
 
 ## Development
 
@@ -185,6 +281,39 @@ After modifying `prisma/schema.prisma`:
 ```bash
 prisma db push
 ```
+
+### Database Verification
+
+Verify that the Prisma schema is correctly applied to PostgreSQL:
+```bash
+python verify_schema.py
+```
+
+This script checks:
+- Table existence
+- Column names, types, and nullable constraints
+- Primary key and unique constraints
+- Indexes
+
+### Database Connection Testing
+
+Test the database connection:
+```bash
+python test_db_connection.py
+```
+
+### API Documentation Verification
+
+Verify that all API documentation endpoints are accessible:
+```bash
+python verify_api_docs.py
+```
+
+This script checks:
+- Root endpoint (/)
+- OpenAPI schema (/openapi.json)
+- Swagger UI (/docs)
+- ReDoc (/redoc)
 
 ### Adding New Routes
 
