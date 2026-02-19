@@ -182,7 +182,14 @@ Integration tests use FastAPI's TestClient to make real HTTP requests to the API
 
 ## Running the Application
 
-Start the development server:
+Start the development server using either method:
+
+**Method 1: Direct execution (recommended for development)**
+```bash
+python main.py
+```
+
+**Method 2: Using uvicorn command**
 ```bash
 uvicorn main:app --reload
 ```
@@ -193,6 +200,8 @@ The application automatically:
 - Connects to the database on startup
 - Disconnects from the database on shutdown
 - Provides interactive API documentation at `/docs` and `/redoc`
+- Runs with auto-reload enabled in development mode (when using `python main.py`)
+- Binds to all network interfaces (0.0.0.0) for accessibility
 
 ## API Documentation
 
