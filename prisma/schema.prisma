@@ -19,6 +19,23 @@ model User {
   isActive       Boolean  @default(true) @map("is_active")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
+  images         Image[]
 
   @@map("users")
+}
+
+model Image {
+  id                Int      @id @default(autoincrement())
+  userId            Int      @map("user_id")
+  objectKey         String   @map("object_key")
+  originalFilename  String   @map("original_filename")
+  generatedFilename String   @map("generated_filename")
+  mimeType          String   @map("mime_type")
+  fileSize          Int      @map("file_size")
+  uploadedAt        DateTime @default(now()) @map("uploaded_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("images")
+  @@index([userId])
 }

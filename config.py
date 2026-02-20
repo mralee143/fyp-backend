@@ -47,6 +47,28 @@ class Settings(BaseSettings):
         description="Debug mode flag"
     )
     
+    # MinIO Configuration
+    minio_endpoint: str = Field(
+        ...,
+        description="MinIO server endpoint (e.g., 'localhost:9000')"
+    )
+    minio_access_key: str = Field(
+        ...,
+        description="MinIO access key"
+    )
+    minio_secret_key: str = Field(
+        ...,
+        description="MinIO secret key"
+    )
+    minio_bucket_name: str = Field(
+        default="user-images",
+        description="MinIO bucket name for storing images"
+    )
+    minio_secure: bool = Field(
+        default=False,
+        description="Use HTTPS for MinIO connection"
+    )
+    
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

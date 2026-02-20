@@ -1,6 +1,6 @@
-# Authentication API
+# Authentication API with Image Upload
 
-A modern user authentication system built with FastAPI and Prisma ORM, providing secure user registration, login, and profile management through RESTful API endpoints.
+A modern user authentication system built with FastAPI and Prisma ORM, providing secure user registration, login, profile management, and image upload capabilities through RESTful API endpoints.
 
 ## Features
 
@@ -8,6 +8,10 @@ A modern user authentication system built with FastAPI and Prisma ORM, providing
 - JWT-based authentication
 - Secure password hashing with bcrypt
 - User profile management
+- Image upload and storage with MinIO
+- Image validation (file type, size, MIME type)
+- User-specific image organization
+- Image retrieval and listing
 - Automatic API documentation (Swagger UI & ReDoc)
 - Type-safe database operations with Prisma ORM
 - Async/await support for high performance
@@ -18,6 +22,8 @@ A modern user authentication system built with FastAPI and Prisma ORM, providing
 - FastAPI 0.104+ - Modern async web framework
 - Prisma 0.11+ - Next-generation ORM with type safety
 - PostgreSQL - Production-grade relational database
+- MinIO - S3-compatible object storage for images
+- minio 7.2.0 - MinIO Python SDK for object storage operations
 - Pydantic 2.5+ - Data validation and settings management
 - python-jose - JWT token generation and validation
 - bcrypt 4.1+ - Secure password hashing with automatic salt generation
@@ -38,7 +44,8 @@ A modern user authentication system built with FastAPI and Prisma ORM, providing
 │   └── auth.py             # Auth-related Pydantic schemas
 ├── services/
 │   ├── auth.py             # Password hashing and JWT token logic
-│   └── database.py         # Prisma client management
+│   ├── database.py         # Prisma client management
+│   └── image_utils.py      # Image validation and filename utilities
 ├── middleware/
 │   └── auth.py             # JWT authentication middleware
 ├── tests/
@@ -54,6 +61,7 @@ A modern user authentication system built with FastAPI and Prisma ORM, providing
     ├── test_profile_access_properties.py  # Profile access tests
     ├── test_sensitive_data_exclusion_properties.py # Sensitive data exclusion tests
     ├── test_auth_middleware_properties.py # Auth middleware tests
+    ├── test_image_upload_auth_properties.py # Image upload authentication tests
     ├── test_error_handling.py             # Error handling tests
     └── test_integration.py                # End-to-end integration tests
 ```
@@ -72,6 +80,13 @@ Create a `.env` file based on `.env.example`:
 DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 SECRET_KEY=your-secret-key-minimum-32-characters-long
 
+# MinIO Configuration (required for image upload)
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET_NAME=user-images
+MINIO_SECURE=false
+
 # Optional (with defaults)
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -79,17 +94,22 @@ APP_NAME=Authentication API
 DEBUG=false
 ```
 
-3. Generate Prisma client:
+3. Start MinIO (for image upload functionality):
+```bash
+docker-compose -f docker-compose.minio.yml up -d
+```
+
+4. Generate Prisma client:
 ```bash
 prisma generate
 ```
 
-4. Set up the database:
+5. Set up the database:
 ```bash
 prisma db push
 ```
 
-5. Verify database schema (optional):
+6. Verify database schema (optional):
 ```bash
 python verify_schema.py
 ```
@@ -116,7 +136,18 @@ This project has successfully migrated from Flask + SQLAlchemy to FastAPI + Pris
 ✅ End-to-end integration tests  
 
 ### In Progress
-🚧 Final system verification (Task 16)  
+🚧 Image upload system with MinIO integration (Tasks 2-13)
+- ✅ Image utility functions (validation, naming, hashing)
+- ✅ Image upload authentication tests
+  - ✅ Property 1: Unauthenticated Request Rejection
+  - ✅ Property 2: Authenticated Request Processing
+- ✅ Image retrieval round-trip tests
+  - ✅ Property 12: Image Retrieval Round-Trip (upload/download integrity)
+  - ✅ Unit tests for specific content and large files
+- ✅ Database schema updates for Image model
+- ✅ MinIO client service implementation
+- ✅ Image upload and retrieval endpoints
+- ⏳ Image listing endpoint  
 
 ### Testing
 
@@ -140,12 +171,16 @@ pytest tests/test_integration.py
 
 # Error handling tests
 pytest tests/test_error_handling.py
+
+# Image upload authentication tests
+pytest tests/test_image_upload_auth_properties.py
 ```
 
 The project includes comprehensive testing:
 - **Property-based tests** using Hypothesis validate system behavior across hundreds of randomly generated inputs
 - **Integration tests** verify complete user flows from signup through login to profile access
 - **Unit tests** for error handling, API documentation, and edge cases
+- **Image upload authentication tests** validate both unauthenticated rejection and authenticated request processing
 - All core services, middleware, routes, and API endpoints are fully tested
 
 ### Property-Based Testing
@@ -160,6 +195,9 @@ Tested properties include:
 - **User Login**: Valid credentials return tokens, invalid credentials rejected
 - **Profile Access**: Authenticated users can access profiles, inactive users rejected
 - **Auth Middleware**: Invalid tokens rejected with 401 status
+- **Image Upload Authentication**: 
+  - Property 1: Unauthenticated requests rejected with 401
+  - Property 2: Authenticated requests processed (not rejected with 401)
 - **Sensitive Data Exclusion**: Hashed passwords never appear in API responses (attributes, serialized dicts, or JSON)
 - **Configuration**: Missing required environment variables fail startup
 - **Database**: Auto-incrementing IDs, unique email constraints
@@ -234,6 +272,26 @@ The FastAPI application automatically generates comprehensive API documentation 
   - Headers: `Authorization: Bearer <jwt_token>`
   - Response: User object (id, email, is_active, created_at, updated_at)
   - Errors: `401 Unauthorized` for invalid/missing token, `400 Bad Request` for inactive users
+
+### Image Management (Coming Soon)
+
+- `POST /images/upload` - Upload an image (requires authentication)
+  - Headers: `Authorization: Bearer <jwt_token>`
+  - Request: Multipart form data with image file
+  - Supported formats: JPG, JPEG, PNG, SVG, BMP, WEBP, GIF, TIFF, ICO
+  - Max file size: 50MB
+  - Response: `201 Created` with image metadata (id, object_key, filenames, size, MIME type, upload timestamp)
+  - Errors: `400 Bad Request` for validation errors, `401 Unauthorized` for missing token, `503 Service Unavailable` for storage errors
+
+- `GET /images/{image_id}` - Retrieve an image (requires authentication)
+  - Headers: `Authorization: Bearer <jwt_token>`
+  - Response: Image file with appropriate Content-Type header
+  - Errors: `401 Unauthorized`, `403 Forbidden` (not owner), `404 Not Found`
+
+- `GET /images/` - List all user's images (requires authentication)
+  - Headers: `Authorization: Bearer <jwt_token>`
+  - Response: Array of image metadata with total count
+  - Errors: `401 Unauthorized`
 
 ## Testing
 
@@ -338,6 +396,13 @@ Required:
 - `DATABASE_URL` - PostgreSQL connection string
 - `SECRET_KEY` - Secret key for JWT signing (minimum 32 characters recommended)
 
+MinIO Configuration (required for image upload):
+- `MINIO_ENDPOINT` - MinIO server endpoint (e.g., localhost:9000)
+- `MINIO_ACCESS_KEY` - MinIO access key
+- `MINIO_SECRET_KEY` - MinIO secret key
+- `MINIO_BUCKET_NAME` - Bucket name for storing images
+- `MINIO_SECURE` - Use HTTPS for MinIO connection (true/false)
+
 Optional (with defaults):
 - `ALGORITHM` - JWT signing algorithm (default: HS256)
 - `ACCESS_TOKEN_EXPIRE_MINUTES` - Token expiration in minutes (default: 30)
@@ -345,3 +410,42 @@ Optional (with defaults):
 - `DEBUG` - Debug mode flag (default: false)
 
 The application will fail to start with a clear validation error if required variables are missing.
+
+## Image Upload Features
+
+The system includes comprehensive image upload capabilities with the following features:
+
+### Validation
+- **File Extensions**: Supports JPG, JPEG, PNG, SVG, BMP, WEBP, GIF, TIFF, ICO
+- **File Size**: Maximum 50MB per image
+- **MIME Type Verification**: Ensures Content-Type matches file extension
+- **Security**: Validates file integrity and prevents malicious uploads
+
+### Storage Organization
+- **User Isolation**: Each user's images stored in hashed folder (e.g., `user_5f4dcc3b/`)
+- **Unique Filenames**: Automatic timestamp-based naming prevents collisions
+- **Snake Case Normalization**: Filenames converted to lowercase snake_case
+- **Privacy**: User folder names are hashed for privacy protection
+
+### Metadata Tracking
+- Original filename preservation
+- Generated filename with timestamp
+- File size and MIME type
+- Upload timestamp
+- Object storage key for retrieval
+
+### Image Utilities (`services/image_utils.py`)
+
+The image utilities module provides:
+
+- `generate_hashed_user_id(user_id)` - Creates consistent, privacy-preserving folder names using MD5 hashing
+- `generate_unique_filename(original_filename)` - Generates timestamped, snake_case filenames
+- `to_snake_case(filename)` - Converts filenames to lowercase snake_case format
+- `validate_file_extension(filename)` - Validates file has an allowed extension
+- `validate_mime_type(content_type, extension)` - Ensures MIME type matches extension
+- `validate_file_size(file_size)` - Enforces 50MB size limit
+
+Constants:
+- `ALLOWED_EXTENSIONS` - Set of supported image formats
+- `MIME_TYPE_MAP` - Mapping of extensions to MIME types
+- `MAX_FILE_SIZE` - Maximum file size (50MB)

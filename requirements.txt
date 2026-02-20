@@ -17,6 +17,9 @@ bcrypt==4.1.2
 # Environment Configuration
 python-dotenv==1.0.0
 
+# Object Storage
+minio==7.2.0
+
 # Form Data Support
 python-multipart==0.0.6
 

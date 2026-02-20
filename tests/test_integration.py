@@ -452,3 +452,295 @@ async def test_api_documentation_endpoints(test_client):
     openapi_json = openapi_response.json()
     assert "openapi" in openapi_json, "Response should be valid OpenAPI schema"
     assert "paths" in openapi_json, "Schema should include API paths"
+
+
+
+@pytest.mark.asyncio
+async def test_image_retrieval_endpoint(test_client, test_db: Prisma):
+    """
+    Test image retrieval endpoint functionality.
+    
+    This integration test verifies that:
+    1. User can retrieve their own image
+    2. User cannot retrieve another user's image (403)
+    3. Non-existent image returns 404
+    4. Unauthenticated request returns 401
+    
+    Validates: Requirements 6.1, 6.2, 6.3, 6.4, 6.5, 6.6
+    """
+    from services.auth import get_password_hash
+    from services.minio_client import MinIOClient
+    from config import settings
+    from routes.images import set_minio_client
+    from services.image_utils import generate_hashed_user_id
+    
+    # Setup MinIO client for testing
+    minio_client = MinIOClient(
+        endpoint=settings.minio_endpoint,
+        access_key=settings.minio_access_key,
+        secret_key=settings.minio_secret_key,
+        bucket_name=settings.minio_bucket_name,
+        secure=settings.minio_secure
+    )
+    minio_client.ensure_bucket_exists()
+    set_minio_client(minio_client)
+    
+    # Create two test users
+    user1_email = "image_owner@example.com"
+    user2_email = "other_user@example.com"
+    password = "TestPassword123!"
+    hashed_password = get_password_hash(password)
+    
+    user1 = await test_db.user.create(
+        data={
+            "email": user1_email,
+            "hashedPassword": hashed_password,
+            "isActive": True
+        }
+    )
+    
+    user2 = await test_db.user.create(
+        data={
+            "email": user2_email,
+            "hashedPassword": hashed_password,
+            "isActive": True
+        }
+    )
+    
+    # Get tokens for both users
+    login_response1 = test_client.post(
+        "/auth/login",
+        data={"username": user1_email, "password": password},
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    token1 = login_response1.json()["access_token"]
+    
+    login_response2 = test_client.post(
+        "/auth/login",
+        data={"username": user2_email, "password": password},
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    token2 = login_response2.json()["access_token"]
+    
+    # Manually create an image record and upload to MinIO for testing
+    test_image_content = b"fake image content for testing"
+    hashed_user_id = generate_hashed_user_id(user1.id)
+    object_key = f"{hashed_user_id}/test_image_123456.jpg"
+    
+    # Upload directly to MinIO
+    minio_client.upload_file(
+        file_data=test_image_content,
+        object_key=object_key,
+        content_type="image/jpeg"
+    )
+    
+    # Create image record in database
+    image = await test_db.image.create(
+        data={
+            "userId": user1.id,
+            "objectKey": object_key,
+            "originalFilename": "test_image.jpg",
+            "generatedFilename": "test_image_123456.jpg",
+            "mimeType": "image/jpeg",
+            "fileSize": len(test_image_content)
+        }
+    )
+    
+    # Test 1: User1 can retrieve their own image
+    retrieve_response = test_client.get(
+        f"/images/{image.id}",
+        headers={"Authorization": f"Bearer {token1}"}
+    )
+    
+    assert retrieve_response.status_code == 200, "Owner should be able to retrieve their image"
+    assert retrieve_response.headers["content-type"] == "image/jpeg", "Content-Type should match"
+    assert retrieve_response.content == test_image_content, "Image content should match"
+    
+    # Test 2: User2 cannot retrieve user1's image (403)
+    forbidden_response = test_client.get(
+        f"/images/{image.id}",
+        headers={"Authorization": f"Bearer {token2}"}
+    )
+    
+    assert forbidden_response.status_code == 403, "Other user should get 403 Forbidden"
+    assert "permission" in forbidden_response.json()["detail"].lower()
+    
+    # Test 3: Non-existent image returns 404
+    not_found_response = test_client.get(
+        f"/images/99999",
+        headers={"Authorization": f"Bearer {token1}"}
+    )
+    
+    assert not_found_response.status_code == 404, "Non-existent image should return 404"
+    assert "not found" in not_found_response.json()["detail"].lower()
+    
+    # Test 4: Unauthenticated request returns 401
+    unauth_response = test_client.get(f"/images/{image.id}")
+    assert unauth_response.status_code == 401, "Unauthenticated request should return 401"
+    
+    # Cleanup: Delete the uploaded image from MinIO
+    try:
+        minio_client.delete_file(object_key)
+    except Exception:
+        pass  # Ignore cleanup errors
+
+
+@pytest.mark.asyncio
+async def test_image_listing_endpoint(test_client, test_db: Prisma):
+    """
+    Test image listing endpoint functionality.
+    
+    This integration test verifies that:
+    1. User can list their own images
+    2. Empty list is returned for users with no images
+    3. Images are ordered by upload timestamp (newest first)
+    4. All metadata fields are included in the response
+    5. Unauthenticated request returns 401
+    
+    Validates: Requirements 7.1, 7.2, 7.3, 7.4
+    """
+    from services.auth import get_password_hash
+    from services.minio_client import MinIOClient
+    from config import settings
+    from routes.images import set_minio_client
+    from services.image_utils import generate_hashed_user_id
+    import time
+    
+    # Setup MinIO client for testing
+    minio_client = MinIOClient(
+        endpoint=settings.minio_endpoint,
+        access_key=settings.minio_access_key,
+        secret_key=settings.minio_secret_key,
+        bucket_name=settings.minio_bucket_name,
+        secure=settings.minio_secure
+    )
+    minio_client.ensure_bucket_exists()
+    set_minio_client(minio_client)
+    
+    # Create two test users
+    user1_email = "list_test_user1@example.com"
+    user2_email = "list_test_user2@example.com"
+    password = "TestPassword123!"
+    hashed_password = get_password_hash(password)
+    
+    user1 = await test_db.user.create(
+        data={
+            "email": user1_email,
+            "hashedPassword": hashed_password,
+            "isActive": True
+        }
+    )
+    
+    user2 = await test_db.user.create(
+        data={
+            "email": user2_email,
+            "hashedPassword": hashed_password,
+            "isActive": True
+        }
+    )
+    
+    # Get tokens for both users
+    login_response1 = test_client.post(
+        "/auth/login",
+        data={"username": user1_email, "password": password},
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    token1 = login_response1.json()["access_token"]
+    
+    login_response2 = test_client.post(
+        "/auth/login",
+        data={"username": user2_email, "password": password},
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    token2 = login_response2.json()["access_token"]
+    
+    # Test 1: Empty list for user with no images
+    empty_list_response = test_client.get(
+        "/images/",
+        headers={"Authorization": f"Bearer {token2}"}
+    )
+    
+    assert empty_list_response.status_code == 200, "Should return 200 for empty list"
+    empty_list_data = empty_list_response.json()
+    assert empty_list_data["images"] == [], "Should return empty array"
+    assert empty_list_data["total"] == 0, "Total should be 0"
+    
+    # Create multiple images for user1
+    hashed_user_id = generate_hashed_user_id(user1.id)
+    uploaded_images = []
+    
+    for i in range(3):
+        test_image_content = f"fake image content {i}".encode()
+        object_key = f"{hashed_user_id}/test_image_{i}_{int(time.time() * 1000)}.jpg"
+        
+        # Upload to MinIO
+        minio_client.upload_file(
+            file_data=test_image_content,
+            object_key=object_key,
+            content_type="image/jpeg"
+        )
+        
+        # Create image record in database
+        image = await test_db.image.create(
+            data={
+                "userId": user1.id,
+                "objectKey": object_key,
+                "originalFilename": f"test_image_{i}.jpg",
+                "generatedFilename": f"test_image_{i}_{int(time.time() * 1000)}.jpg",
+                "mimeType": "image/jpeg",
+                "fileSize": len(test_image_content)
+            }
+        )
+        uploaded_images.append(image)
+        time.sleep(0.01)  # Small delay to ensure different timestamps
+    
+    # Test 2: User1 can list their images
+    list_response = test_client.get(
+        "/images/",
+        headers={"Authorization": f"Bearer {token1}"}
+    )
+    
+    assert list_response.status_code == 200, "Should return 200 for image list"
+    list_data = list_response.json()
+    
+    # Verify response structure
+    assert "images" in list_data, "Response should include 'images' field"
+    assert "total" in list_data, "Response should include 'total' field"
+    assert list_data["total"] == 3, "Total should be 3"
+    assert len(list_data["images"]) == 3, "Should return 3 images"
+    
+    # Test 3: Verify all metadata fields are included
+    for image_data in list_data["images"]:
+        assert "id" in image_data, "Should include id"
+        assert "object_key" in image_data, "Should include object_key"
+        assert "original_filename" in image_data, "Should include original_filename"
+        assert "generated_filename" in image_data, "Should include generated_filename"
+        assert "mime_type" in image_data, "Should include mime_type"
+        assert "file_size" in image_data, "Should include file_size"
+        assert "uploaded_at" in image_data, "Should include uploaded_at"
+    
+    # Test 4: Verify images are ordered by uploadedAt descending (newest first)
+    timestamps = [img["uploaded_at"] for img in list_data["images"]]
+    assert timestamps == sorted(timestamps, reverse=True), "Images should be ordered by uploadedAt descending"
+    
+    # Test 5: User2 still has empty list (isolation)
+    user2_list_response = test_client.get(
+        "/images/",
+        headers={"Authorization": f"Bearer {token2}"}
+    )
+    
+    assert user2_list_response.status_code == 200
+    user2_list_data = user2_list_response.json()
+    assert user2_list_data["total"] == 0, "User2 should have no images"
+    assert len(user2_list_data["images"]) == 0, "User2 should have empty list"
+    
+    # Test 6: Unauthenticated request returns 401
+    unauth_response = test_client.get("/images/")
+    assert unauth_response.status_code == 401, "Unauthenticated request should return 401"
+    
+    # Cleanup: Delete uploaded images from MinIO
+    for image in uploaded_images:
+        try:
+            minio_client.delete_file(image.objectKey)
+        except Exception:
+            pass  # Ignore cleanup errors
