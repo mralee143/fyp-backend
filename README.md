@@ -34,18 +34,22 @@ A modern user authentication system built with FastAPI and Prisma ORM, providing
 ```
 ├── main.py                  # Application entry point with lifespan management
 ├── config.py                # Configuration management with Pydantic Settings
+├── test_integration_startup.py # Quick MinIO integration verification script
 ├── prisma/
 │   └── schema.prisma       # Database schema definition
 ├── routes/
 │   ├── auth.py             # Authentication endpoints (signup, login)
-│   └── users.py            # User management endpoints (profile)
+│   ├── users.py            # User management endpoints (profile)
+│   └── images.py           # Image upload/retrieval endpoints
 ├── schemas/
 │   ├── user.py             # User-related Pydantic schemas
-│   └── auth.py             # Auth-related Pydantic schemas
+│   ├── auth.py             # Auth-related Pydantic schemas
+│   └── image.py            # Image-related Pydantic schemas
 ├── services/
 │   ├── auth.py             # Password hashing and JWT token logic
 │   ├── database.py         # Prisma client management
-│   └── image_utils.py      # Image validation and filename utilities
+│   ├── image_utils.py      # Image validation and filename utilities
+│   └── minio_client.py     # MinIO client for object storage
 ├── middleware/
 │   └── auth.py             # JWT authentication middleware
 ├── tests/
@@ -62,7 +66,9 @@ A modern user authentication system built with FastAPI and Prisma ORM, providing
     ├── test_sensitive_data_exclusion_properties.py # Sensitive data exclusion tests
     ├── test_auth_middleware_properties.py # Auth middleware tests
     ├── test_image_upload_auth_properties.py # Image upload authentication tests
+    ├── test_image_retrieval_properties.py # Image retrieval round-trip tests
     ├── test_error_handling.py             # Error handling tests
+    ├── test_error_handling_images.py      # Image upload error handling tests
     └── test_integration.py                # End-to-end integration tests
 ```
 
@@ -99,17 +105,22 @@ DEBUG=false
 docker-compose -f docker-compose.minio.yml up -d
 ```
 
-4. Generate Prisma client:
+4. Verify MinIO integration (optional but recommended):
+```bash
+python test_integration_startup.py
+```
+
+5. Generate Prisma client:
 ```bash
 prisma generate
 ```
 
-5. Set up the database:
+6. Set up the database:
 ```bash
 prisma db push
 ```
 
-6. Verify database schema (optional):
+7. Verify database schema (optional):
 ```bash
 python verify_schema.py
 ```
@@ -141,6 +152,9 @@ This project has successfully migrated from Flask + SQLAlchemy to FastAPI + Pris
 - ✅ Image upload authentication tests
   - ✅ Property 1: Unauthenticated Request Rejection
   - ✅ Property 2: Authenticated Request Processing
+- ✅ Image upload error handling tests
+  - ✅ Property 16: Descriptive Error Messages (no extension, invalid extension, oversized files, MIME mismatches)
+  - ✅ MinIO unavailability scenarios (upload, retrieval, uninitialized client)
 - ✅ Image retrieval round-trip tests
   - ✅ Property 12: Image Retrieval Round-Trip (upload/download integrity)
   - ✅ Unit tests for specific content and large files
@@ -172,8 +186,14 @@ pytest tests/test_integration.py
 # Error handling tests
 pytest tests/test_error_handling.py
 
+# Image upload error handling tests
+pytest tests/test_error_handling_images.py
+
 # Image upload authentication tests
 pytest tests/test_image_upload_auth_properties.py
+
+# Image retrieval tests
+pytest tests/test_image_retrieval_properties.py
 ```
 
 The project includes comprehensive testing:
@@ -181,6 +201,8 @@ The project includes comprehensive testing:
 - **Integration tests** verify complete user flows from signup through login to profile access
 - **Unit tests** for error handling, API documentation, and edge cases
 - **Image upload authentication tests** validate both unauthenticated rejection and authenticated request processing
+- **Image upload error handling tests** verify descriptive error messages and MinIO unavailability scenarios
+- **Image retrieval tests** validate round-trip integrity and ownership authorization
 - All core services, middleware, routes, and API endpoints are fully tested
 
 ### Property-Based Testing
@@ -198,6 +220,12 @@ Tested properties include:
 - **Image Upload Authentication**: 
   - Property 1: Unauthenticated requests rejected with 401
   - Property 2: Authenticated requests processed (not rejected with 401)
+- **Image Upload Error Handling**:
+  - Property 16: Descriptive error messages for validation failures (missing extension, invalid extension, oversized files, MIME type mismatches)
+  - MinIO unavailability returns 503 Service Unavailable
+  - Uninitialized MinIO client returns 503
+- **Image Retrieval**:
+  - Property 12: Round-trip integrity (uploaded content matches retrieved content)
 - **Sensitive Data Exclusion**: Hashed passwords never appear in API responses (attributes, serialized dicts, or JSON)
 - **Configuration**: Missing required environment variables fail startup
 - **Database**: Auto-incrementing IDs, unique email constraints
@@ -316,6 +344,9 @@ pytest tests/test_integration.py
 # Error handling tests
 pytest tests/test_error_handling.py
 
+# Image upload error handling tests
+pytest tests/test_error_handling_images.py
+
 # API documentation tests
 pytest tests/test_api_documentation.py
 ```
@@ -368,6 +399,21 @@ Test the database connection:
 ```bash
 python test_db_connection.py
 ```
+
+### MinIO Integration Testing
+
+Verify MinIO client initialization and bucket creation:
+```bash
+python test_integration_startup.py
+```
+
+This script checks:
+- MinIO client initialization with configured credentials
+- Bucket creation (if it doesn't exist)
+- Bucket existence verification
+- Connection to MinIO service
+
+Run this before starting the application to ensure MinIO is properly configured.
 
 ### API Documentation Verification
 
