@@ -5,7 +5,6 @@ generator client {
   provider             = "prisma-client-py"
   interface            = "asyncio"
   recursive_type_depth = 5
-  output               = "../.venv/Lib/site-packages/prisma"
 }
 
 datasource db {

@@ -48,6 +48,8 @@ async def signup(
         HTTPException: 500 Internal Server Error if database operation fails
     """
     try:
+        
+        print("user_data", user_data)
         # Check if user already exists
         existing_user = await prisma.user.find_unique(where={"email": user_data.email})
         if existing_user:
