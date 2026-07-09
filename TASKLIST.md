@@ -60,7 +60,7 @@ Targets split into **two different AI problems**:
 - [ ] 4.4 (Optional) Async jobs — return `job_id`, process in background, poll status
 
 ## PHASE 5 — Frontend: Setup
-- [ ] 5.1 `create-next-app` (App Router + TypeScript + Tailwind) in `frontend/`
+- [x] 5.1 `create-next-app` (App Router + TypeScript + Tailwind) in `frontend/`
 - [ ] 5.2 Install axios, auth store (zustand/Context), react-hook-form, shadcn/ui
 - [ ] 5.3 API client + `.env.local` (`NEXT_PUBLIC_API_URL`) + JWT interceptor
 
