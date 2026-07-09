@@ -57,6 +57,26 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         """Return CORS origins as a cleaned list."""
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    # Email / SMTP Configuration (Gmail: smtp.gmail.com:587 with an App Password)
+    smtp_host: str = Field(default="smtp.gmail.com", description="SMTP server host")
+    smtp_port: int = Field(default=587, description="SMTP server port (587 for STARTTLS)")
+    smtp_user: str = Field(default="", description="SMTP username / sender email")
+    smtp_password: str = Field(default="", description="SMTP password / Gmail App Password")
+    smtp_from: str = Field(default="", description="From address (defaults to smtp_user)")
+
+    # OTP Configuration
+    otp_expiry_minutes: int = Field(default=10, description="Minutes an email OTP stays valid")
+
+    @property
+    def email_enabled(self) -> bool:
+        """True when SMTP credentials are configured; otherwise OTPs are logged only."""
+        return bool(self.smtp_user and self.smtp_password)
+
+    @property
+    def email_from(self) -> str:
+        """Resolved From address."""
+        return self.smtp_from or self.smtp_user
     
     # MinIO Configuration
     minio_endpoint: str = Field(

@@ -13,9 +13,17 @@ from datetime import timedelta
 import logging
 
 from schemas.user import UserCreate, UserOut
-from schemas.auth import Token
+from schemas.auth import (
+    Token,
+    SignupResponse,
+    OtpVerify,
+    OtpResend,
+    MessageResponse,
+)
 from services.auth import verify_password, get_password_hash, create_access_token
 from services.database import get_prisma
+from services.otp import generate_otp, verify_otp
+from services.email import send_otp_email
 from config import settings
 
 
@@ -25,50 +33,80 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/signup", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+def _send_verification(email: str) -> None:
+    """
+    Generate an OTP for the email and send it (or log it if SMTP is off).
+
+    Raises a clean 502 if email delivery fails (e.g. SMTP/DNS/network error)
+    instead of leaking a 500 stack trace to the client.
+    """
+    code = generate_otp(email)
+    try:
+        send_otp_email(email, code)
+    except Exception as e:
+        logger.error(f"Failed to send verification email to {email}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not send the verification email right now. Please try again in a moment.",
+        )
+
+
+@router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
 async def signup(
     user_data: UserCreate,
     prisma: Prisma = Depends(get_prisma)
 ):
     """
-    Register a new user account.
-    
-    Creates a new user with the provided email and password. The password
-    is hashed before storage. Returns 409 if email already exists.
-    
+    Register a new user account (email verification required).
+
+    Creates the user as INACTIVE and emails a one-time verification code.
+    The account is activated once the code is confirmed via /auth/verify-otp;
+    login rejects inactive (unverified) users.
+
+    If the email already exists but is unverified, a new code is sent instead
+    of returning a conflict. A verified account returns 409.
+
     Args:
         user_data: User registration data (email and password)
         prisma: Prisma client instance for database operations
-        
+
     Returns:
-        UserOut: The created user's data (excluding password)
-        
+        SignupResponse: confirmation that a verification code was sent
+
     Raises:
-        HTTPException: 409 Conflict if email already registered
+        HTTPException: 409 Conflict if email already verified
         HTTPException: 500 Internal Server Error if database operation fails
     """
     try:
-        
-        print("user_data", user_data)
         # Check if user already exists
         existing_user = await prisma.user.find_unique(where={"email": user_data.email})
         if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Email already registered"
+            if existing_user.isActive:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email already registered"
+                )
+            # Exists but unverified: refresh password + resend code
+            await prisma.user.update(
+                where={"email": user_data.email},
+                data={"hashedPassword": get_password_hash(user_data.password)},
             )
-        
-        # Hash password and create user
+            _send_verification(user_data.email)
+            return SignupResponse(email=user_data.email)
+
+        # Hash password and create the user as inactive (pending verification)
         hashed_password = get_password_hash(user_data.password)
-        user = await prisma.user.create(
+        await prisma.user.create(
             data={
                 "email": user_data.email,
-                "hashedPassword": hashed_password
+                "hashedPassword": hashed_password,
+                "isActive": False,
             }
         )
-        
-        return UserOut.model_validate(user)
-    
+
+        _send_verification(user_data.email)
+        return SignupResponse(email=user_data.email)
+
     except HTTPException:
         # Re-raise HTTP exceptions (like 409 Conflict)
         raise
@@ -86,6 +124,68 @@ async def signup(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred"
         )
+
+
+@router.post("/verify-otp", response_model=Token)
+async def verify_otp_route(
+    payload: OtpVerify,
+    prisma: Prisma = Depends(get_prisma)
+):
+    """
+    Verify an email OTP, activate the account, and return a JWT (auto-login).
+
+    A valid single-use OTP proves email ownership, so a token is issued so the
+    frontend can go straight to the dashboard. An already-verified account can
+    NOT obtain a token here (must log in normally) — this prevents bypassing
+    the password.
+
+    Raises 404 if no such user, 400 if already verified or the code is invalid.
+    """
+    user = await prisma.user.find_unique(where={"email": payload.email})
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found for this email",
+        )
+    if user.isActive:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already verified. Please log in.",
+        )
+
+    ok, message = verify_otp(payload.email, payload.code)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+
+    await prisma.user.update(
+        where={"email": payload.email}, data={"isActive": True}
+    )
+
+    # Issue a token so the user lands straight on the dashboard.
+    access_token = create_access_token(
+        data={"sub": user.email},
+        expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
+    )
+    return Token(access_token=access_token)
+
+
+@router.post("/resend-otp", response_model=MessageResponse)
+async def resend_otp_route(
+    payload: OtpResend,
+    prisma: Prisma = Depends(get_prisma)
+):
+    """Resend a verification code to an unverified account."""
+    user = await prisma.user.find_unique(where={"email": payload.email})
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found for this email",
+        )
+    if user.isActive:
+        return MessageResponse(message="Email already verified. You can log in.")
+
+    _send_verification(payload.email)
+    return MessageResponse(message="A new verification code has been sent.")
 
 
 @router.post("/login", response_model=Token)
@@ -123,11 +223,11 @@ async def login(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Check if user is active
+        # Check if user is active (email must be verified via OTP)
         if not user.isActive:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Inactive user"
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Email not verified. Please check your inbox for the verification code."
             )
         
         # Create access token

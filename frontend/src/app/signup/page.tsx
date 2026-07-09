@@ -46,8 +46,8 @@ export default function SignupPage() {
     setLoading(true);
     try {
       await signup(values.email, values.password);
-      toast.success("Account created — please log in.");
-      router.push("/login");
+      toast.success("Account created — check your email for a code.");
+      router.push(`/verify?email=${encodeURIComponent(values.email)}`);
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {

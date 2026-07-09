@@ -70,6 +70,7 @@ Targets split into **two different AI problems**:
 - [x] 6.3 Auth context + token persistence (zustand + localStorage)
 - [x] 6.4 Protected routes / redirect to login (dashboard guard)
 - [x] 6.5 Logout
+- [x] 6.6 Email OTP verification at signup — inactive user until code confirmed; Gmail SMTP + `/verify` page, resend support
 
 ## PHASE 7 — Frontend: Dashboard
 - [ ] 7.1 Layout (sidebar + top bar, user email)

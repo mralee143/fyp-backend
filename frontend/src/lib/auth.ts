@@ -21,9 +21,25 @@ export async function login(email: string, password: string) {
   return data;
 }
 
-/** Register a new account against POST /auth/signup (JSON body). */
+/** Register a new account against POST /auth/signup (JSON body). Emails an OTP. */
 export async function signup(email: string, password: string) {
   const { data } = await api.post("/auth/signup", { email, password });
+  return data;
+}
+
+/** Verify the signup email OTP against POST /auth/verify-otp; stores the returned JWT (auto-login). */
+export async function verifyOtp(email: string, code: string) {
+  const { data } = await api.post<{ access_token: string; token_type: string }>(
+    "/auth/verify-otp",
+    { email, code }
+  );
+  useAuthStore.getState().setAuth(data.access_token, email);
+  return data;
+}
+
+/** Request a fresh OTP against POST /auth/resend-otp. */
+export async function resendOtp(email: string) {
+  const { data } = await api.post("/auth/resend-otp", { email });
   return data;
 }
 
