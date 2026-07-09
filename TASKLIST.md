@@ -65,11 +65,11 @@ Targets split into **two different AI problems**:
 - [x] 5.3 API client + `.env.local` (`NEXT_PUBLIC_API_URL`) + JWT interceptor
 
 ## PHASE 6 — Frontend: Auth
-- [ ] 6.1 Login page → POST `/auth/login` (form-urlencoded), store JWT
-- [ ] 6.2 Signup page → POST `/auth/signup`
-- [ ] 6.3 Auth context + token persistence
-- [ ] 6.4 Protected routes / redirect to login
-- [ ] 6.5 Logout
+- [x] 6.1 Login page → POST `/auth/login` (form-urlencoded), store JWT
+- [x] 6.2 Signup page → POST `/auth/signup`
+- [x] 6.3 Auth context + token persistence (zustand + localStorage)
+- [x] 6.4 Protected routes / redirect to login (dashboard guard)
+- [x] 6.5 Logout
 
 ## PHASE 7 — Frontend: Dashboard
 - [ ] 7.1 Layout (sidebar + top bar, user email)
