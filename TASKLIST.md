@@ -78,11 +78,24 @@ Targets split into **two different AI problems**:
 - [ ] 7.3 Recent detections list from `GET /detection/history`
 - [ ] 7.4 Loading skeletons + empty states
 
+## ⭐ CORE USER FLOW (requested) — Upload → Detect → Marked results
+The main feature the user wants, end to end:
+1. User uploads a video on the dashboard.
+2. Model runs detection (violence / weapons) on the video.
+3. App navigates to a **results page** that shows:
+   - **When** the violence happens — exact timestamp(s) on a timeline, click to jump to that moment.
+   - **The video played back**, with the detected violence **marked** (bounding boxes + labels drawn on the frames).
+   - A **marked/annotated video** the user can view and download (violence highlighted).
+Covered by Phases 8–9 below, plus these backend additions:
+- [ ] C.1 Backend: produce a **server-side annotated (marked) video** — draw boxes/labels on detected frames, re-encode to mp4, store in MinIO, return its URL in the detection response.
+- [ ] C.2 Backend: return violence **segments/timestamps** grouped (start/end + label + score), not just per-frame hits, so the frontend timeline can jump-to-time.
+- [ ] C.3 Note: real *action* violence (fighting/robbery) needs Phase 1 model training; until then "violence" = weapon/object detection (YOLO/OWLv2) already available via `/detection/video`.
+
 ## PHASE 8 — Frontend: Upload & Model Selection
-- [ ] 8.1 Drag-and-drop upload + client validation (type, 200MB cap)
-- [ ] 8.2 Model/mode selector (Actions / Weapons+Bomb / Both) + params (`num_frames`, `threshold`)
-- [ ] 8.3 Upload progress bar → POST multipart `/detection/video`
-- [ ] 8.4 Job polling if async (Phase 4.4)
+- [x] 8.1 Drag-and-drop upload + client validation (type, 200MB cap)
+- [x] 8.2 Model/mode selector (Weapons/YOLO vs Any-object/OWLv2 + free-text queries) + params (`num_frames`, `threshold`)
+- [x] 8.3 Upload progress bar → POST multipart `/detection/video` (with JWT); inline result summary + detections table
+- [ ] 8.4 Job polling if async (Phase 4.4) — N/A until async backend exists
 
 ## PHASE 9 — Frontend: Results / Detail View
 - [ ] 9.1 Verdict banner — e.g. "⚠️ Fighting + Bomb detected" vs "✅ Clear"
