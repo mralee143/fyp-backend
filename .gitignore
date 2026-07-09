@@ -31,6 +31,7 @@ wheels/
 venv/
 ENV/
 env/
+qwen_env/
 
 # Prisma
 prisma/migrations/
@@ -53,4 +54,13 @@ htmlcov/
 .DS_Store
 Thumbs.db
 .hypothesis
-Recording 2025-11-07 030110.mp4
+
+# Media & sample assets (keep large binaries out of the repo)
+*.mp4
+*.jpg
+*.jpeg
+*.png
+!docs/**
+
+# Generated / local artifacts
+report.json
