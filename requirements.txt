@@ -38,5 +38,7 @@ git+https://github.com/huggingface/transformers
 accelerate>=0.30.0
 qwen-vl-utils
 pillow
+ultralytics
+huggingface_hub
 qwen-vl-utils[decord]==0.0.8
 decord2

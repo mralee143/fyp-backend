@@ -46,6 +46,17 @@ class Settings(BaseSettings):
         default=False,
         description="Debug mode flag"
     )
+
+    # CORS Configuration
+    cors_origins: str = Field(
+        default="http://localhost:3000,http://127.0.0.1:3000",
+        description="Comma-separated list of allowed frontend origins for CORS"
+    )
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Return CORS origins as a cleaned list."""
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
     
     # MinIO Configuration
     minio_endpoint: str = Field(
