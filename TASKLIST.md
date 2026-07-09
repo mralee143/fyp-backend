@@ -61,8 +61,8 @@ Targets split into **two different AI problems**:
 
 ## PHASE 5 — Frontend: Setup
 - [x] 5.1 `create-next-app` (App Router + TypeScript + Tailwind) in `frontend/`
-- [ ] 5.2 Install axios, auth store (zustand/Context), react-hook-form, shadcn/ui
-- [ ] 5.3 API client + `.env.local` (`NEXT_PUBLIC_API_URL`) + JWT interceptor
+- [x] 5.2 Install axios, auth store (zustand/Context), react-hook-form, shadcn/ui
+- [x] 5.3 API client + `.env.local` (`NEXT_PUBLIC_API_URL`) + JWT interceptor
 
 ## PHASE 6 — Frontend: Auth
 - [ ] 6.1 Login page → POST `/auth/login` (form-urlencoded), store JWT
