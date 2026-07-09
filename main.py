@@ -6,11 +6,12 @@ lifecycle, and registers all route handlers.
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from prisma import Prisma
 import logging
 
-from routes import auth, users, images
+from routes import auth, users, images, detection
 from services.database import set_prisma
 from services.minio_client import MinIOClient
 from config import settings
@@ -83,10 +84,21 @@ app = FastAPI(
 )
 
 
+# Enable CORS for the Next.js frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 # Register routers
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(images.router)  # Router already has prefix="/images"
+app.include_router(detection.router)  # Router already has prefix="/detection"
 
 
 @app.get("/", tags=["Health"])
