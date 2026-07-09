@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { useAuthStore } from "@/store/auth";
 import { logout } from "@/lib/auth";
+import { VideoUpload } from "@/components/video-upload";
 
 const SUMMARY = [
   { label: "Total scans", value: 0 },
@@ -79,22 +79,9 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        <Card className="mt-8">
-          <CardHeader>
-            <CardTitle>Analyze a video</CardTitle>
-            <CardDescription>
-              Upload footage to scan for weapons, fights and other threats.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid place-items-center rounded-xl border border-dashed py-16 text-center text-muted-foreground">
-              <p>Upload &amp; detection UI coming next (Phase 8).</p>
-              <Button className="mt-4" disabled>
-                Upload video
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="mt-8">
+          <VideoUpload />
+        </div>
       </main>
     </div>
   );
