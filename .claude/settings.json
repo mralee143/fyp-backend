@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"https://api.github.com/users/mralee143/repos?per_page=100&sort=updated\")",
+      "Bash(npm run *)",
+      "Bash(git merge --no-ff task/5.1-nextjs-scaffold -m ' *)",
+      "Bash(git merge --no-ff task/6-auth-ui -m ' *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(echo 'localhost:3000 status: __CMDSUB_OUTPUT__')"
+    ]
+  }
+}
