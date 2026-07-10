@@ -7,7 +7,8 @@ services:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      # Host 5434 -> container 5432 (host 5432/5433 are taken by native PostgreSQL 13/18)
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
