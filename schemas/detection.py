@@ -29,3 +29,24 @@ class VideoDetectionResponse(BaseModel):
     label_counts: dict[str, int]
     weapon_detected: bool
     detections: list[Detection]
+
+
+class ViolenceSegment(BaseModel):
+    """One violent/threatening event found by the LLM, with its time range."""
+    label: str = Field(description="Short event label, e.g. 'Fighting', 'Gun'.")
+    category: str = Field(
+        default="violence",
+        description="Event kind: 'violence', 'theft', or 'harassment'.",
+    )
+    description: str = Field(description="What happens in this segment.")
+    start_time: float = Field(description="Start time in seconds from video start.")
+    end_time: float = Field(description="End time in seconds from video start.")
+    confidence: float = Field(description="Model confidence in [0, 1].")
+
+
+class LlmDetectionResponse(BaseModel):
+    """Result of analyzing a video for violence with a vision-LLM (Gemini)."""
+    model_id: str
+    violence_detected: bool
+    summary: str
+    segments: list[ViolenceSegment]

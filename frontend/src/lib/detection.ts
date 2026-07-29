@@ -29,6 +29,28 @@ export interface DetectOptions {
   threshold: number;
 }
 
+/** One violence event found by the LLM (mirrors backend ViolenceSegment). */
+export interface ViolenceSegment {
+  label: string;
+  /** "violence" | "theft" | "harassment" | "other" — backend may add more. */
+  category: string;
+  description: string;
+  start_time: number;
+  end_time: number;
+  confidence: number;
+}
+
+/** Response from POST /detection/video/llm (Gemini analysis). */
+export interface LlmDetectionResponse {
+  model_id: string;
+  violence_detected: boolean;
+  summary: string;
+  segments: ViolenceSegment[];
+}
+
+/** Gemini inline limit — keep LLM uploads small. */
+export const MAX_LLM_BYTES = 200 * 1024 * 1024; // 200 MB (Gemini Files API)
+
 export const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // 200 MB
 export const ALLOWED_VIDEO_EXT = [".mp4", ".mov", ".avi", ".mkv", ".webm"];
 
@@ -58,6 +80,60 @@ export async function detectVideo(
       // instance's default application/json.
       headers: { "Content-Type": "multipart/form-data" },
       timeout: 0, // model inference can take a while
+      onUploadProgress: (e: AxiosProgressEvent) => {
+        if (onProgress && e.total) {
+          onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      },
+    }
+  );
+  return data;
+}
+
+/**
+ * Analyze a video for violence with the LLM (Gemini) endpoint.
+ * `onProgress` reports upload progress (0-100); inference runs after upload.
+ */
+export async function detectVideoLlm(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<LlmDetectionResponse> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const { data } = await api.post<LlmDetectionResponse>(
+    "/detection/video/llm",
+    form,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 0,
+      onUploadProgress: (e: AxiosProgressEvent) => {
+        if (onProgress && e.total) {
+          onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      },
+    }
+  );
+  return data;
+}
+
+/**
+ * Recognise violent/criminal actions with the local model (no API key needed).
+ * Returns the same shape as the LLM route, so results share one timeline view.
+ */
+export async function detectVideoAction(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<LlmDetectionResponse> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const { data } = await api.post<LlmDetectionResponse>(
+    "/detection/video/action",
+    form,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 0,
       onUploadProgress: (e: AxiosProgressEvent) => {
         if (onProgress && e.total) {
           onProgress(Math.round((e.loaded / e.total) * 100));

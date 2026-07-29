@@ -88,8 +88,30 @@ The main feature the user wants, end to end:
    - A **marked/annotated video** the user can view and download (violence highlighted).
 Covered by Phases 8–9 below, plus these backend additions:
 - [ ] C.1 Backend: produce a **server-side annotated (marked) video** — draw boxes/labels on detected frames, re-encode to mp4, store in MinIO, return its URL in the detection response.
-- [ ] C.2 Backend: return violence **segments/timestamps** grouped (start/end + label + score), not just per-frame hits, so the frontend timeline can jump-to-time.
-- [ ] C.3 Note: real *action* violence (fighting/robbery) needs Phase 1 model training; until then "violence" = weapon/object detection (YOLO/OWLv2) already available via `/detection/video`.
+- [x] C.2 Backend: return violence **segments/timestamps** grouped (start/end + label + score), not just per-frame hits, so the frontend timeline can jump-to-time. → `/detection/video/llm` (Gemini) and `/detection/video/action` (local VideoMAE) both return `{label, category, description, start_time, end_time, confidence}`.
+- [x] C.3 ~~real *action* violence needs Phase 1 training~~ — **superseded**: `/detection/video/action` uses a pretrained UCF-Crime VideoMAE checkpoint (Fighting/Assault/Abuse/Robbery/Shooting), so action violence works without training first. Phase 1 is still the path to a *custom* label set (esp. harassment, which no off-the-shelf model covers — see L.9).
+
+## ⭐ PHASE L — Proper video violence detection via LLM / Vision-LLM (requested)
+Goal: detect violence in a video **properly** using an LLM/VLM (vision-language model), not just object boxes, and wire it into the frontend. (Repo already has `run_qwen.py` + `qwen_env` — likely Qwen2-VL experiments to build on.)
+- [x] L.1 Pick the VLM approach — **chose hosted Gemini** (`gemini-2.0-flash`) over local Qwen2.5-VL-7B: the RTX 4060's 8 GB VRAM does not fit a 7B VLM at fp16 (~16 GB needed).
+- [x] L.2 `services/llm_detection.py` → `detect_violence_llm(video_bytes, mime_type)`: sends the clip inline to Gemini with a response schema, returns per-segment `{label, category, description, start/end time, confidence}` + `violence_detected`.
+- [x] L.3 Added `/detection/video/llm` (kept separate from the `/detection/video` object contract).
+- [x] L.4 Extended `schemas/detection.py` with `ViolenceSegment` / `LlmDetectionResponse`, coexisting with the YOLO/OWLv2 response.
+- [x] L.5 Robustness — 180s timeout, JSON-parse guards, 503 (unconfigured) / 400 (too large) / 502 (upstream) mapping.
+- [x] L.6 Frontend — "AI analysis (LLM)" model option + verdict/segments table with timestamps.
+- [x] L.7 Findings render on a timeline in `video-upload.tsx` (client-side player, jump-to-time). Independent of the C.1 marked video, which is still open.
+- [x] L.8 Documented in `.env.example` (`GEMINI_API_KEY`, `ACTION_MODEL_ID`) and `RUN.md`.
+- [ ] L.9 **Harassment** — no off-the-shelf model exists ([HarassGuard, 2026](https://arxiv.org/html/2604.00592) uses VLM + prompt engineering, 88% binary / 68.9% multi-class, on a custom 825-clip set). Currently handled by the Gemini prompt with a `harassment` category. A purpose-built classifier needs Phase 1 training on a labelled set.
+
+## ⭐ PHASE A — Local action recognition (fighting) — DONE
+- [x] A.1 `services/action_detection.py` → `detect_actions(video_path, window_seconds, stride_seconds, threshold)`: sliding-window VideoMAE over the clip, merges adjacent same-label windows into segments.
+- [x] A.2 `/detection/video/action` route; reuses `LlmDetectionResponse` so both paths share one frontend timeline.
+- [x] A.3 Model: `OPear/videomae-large-finetuned-UCF-Crime` (14 UCF-Crime classes), overridable via `ACTION_MODEL_ID`.
+- [x] A.4 Frontend "Fighting (local)" option — runs offline, no API key.
+- [x] A.5 CUDA torch (`2.10.0+cu126`) so the RTX 4060 is actually used; was silently running the `+cpu` build.
+
+## 🖥️ RUN / OPERATIONS
+- [x] R.1 Save all commands needed to run the full stack → see [`RUN.md`](RUN.md) (Docker + Postgres on 5434, backend on 8000, frontend on 3000, env/DB creds, DBeaver, troubleshooting).
 
 ## PHASE 8 — Frontend: Upload & Model Selection
 - [x] 8.1 Drag-and-drop upload + client validation (type, 200MB cap)
