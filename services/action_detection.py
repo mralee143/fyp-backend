@@ -93,6 +93,24 @@ def _category_for(label: str) -> str:
     return _CATEGORIES.get(label.lower().replace(" ", ""), "violence")
 
 
+# The model confuses the physical-violence classes (Abuse/Assault/Fighting) on
+# clean/out-of-distribution footage, so present them under one accurate label
+# instead of a misleading sub-name. Other classes keep their proper names.
+_DISPLAY_LABEL = {
+    "abuse": "Fighting / Assault",
+    "assault": "Fighting / Assault",
+    "fighting": "Fighting / Assault",
+    "roadaccidents": "Road Accident",
+    "shooting": "Shooting",
+    "explosion": "Explosion",
+}
+
+
+def _display_label(label: str) -> str:
+    key = label.lower().replace(" ", "").replace("_", "")
+    return _DISPLAY_LABEL.get(key, label.replace("_", " "))
+
+
 def detect_actions(
     video_path: Path,
     window_seconds: int = 3,
@@ -150,7 +168,7 @@ def detect_actions(
 
         hits.append(
             {
-                "label": label.replace("_", " "),
+                "label": _display_label(label),
                 "category": _category_for(label),
                 "start_time": round(frame_to_seconds(start_frame, fps), 2),
                 "end_time": round(frame_to_seconds(end_frame, fps), 2),

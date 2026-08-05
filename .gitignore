@@ -64,3 +64,6 @@ Thumbs.db
 
 # Generated / local artifacts
 report.json
+
+# Extracted incident clips
+/media/

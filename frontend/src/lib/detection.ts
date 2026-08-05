@@ -38,6 +38,8 @@ export interface ViolenceSegment {
   start_time: number;
   end_time: number;
   confidence: number;
+  clip_url?: string | null;
+  explanation?: string | null;
 }
 
 /** Response from POST /detection/video/llm (Gemini analysis). */
@@ -50,6 +52,14 @@ export interface LlmDetectionResponse {
 
 /** Gemini inline limit — keep LLM uploads small. */
 export const MAX_LLM_BYTES = 200 * 1024 * 1024; // 200 MB (Gemini Files API)
+
+/** Turn a backend media path ("/media/clips/x.mp4") into a full URL. */
+export function mediaUrl(path?: string | null): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith("http")) return path;
+  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
+  return `${base}${path}`;
+}
 
 export const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // 200 MB
 export const ALLOWED_VIDEO_EXT = [".mp4", ".mov", ".avi", ".mkv", ".webm"];
@@ -141,6 +151,106 @@ export async function detectVideoAction(
       },
     }
   );
+  return data;
+}
+
+/**
+ * Analyze a video with the local Qwen2.5-VL model (offline, no key/quota).
+ * Slow on CPU — inference can take a few minutes.
+ */
+export async function detectVideoQwen(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<LlmDetectionResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post<LlmDetectionResponse>(
+    "/detection/video/qwen",
+    form,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 0,
+      onUploadProgress: (e: AxiosProgressEvent) => {
+        if (onProgress && e.total) {
+          onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      },
+    }
+  );
+  return data;
+}
+
+/**
+ * Auto detection — the backend runs all models in a cascade (Gemini → action →
+ * Qwen) and returns the first that finds an incident. Best coverage.
+ */
+export async function detectVideoAuto(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<LlmDetectionResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post<LlmDetectionResponse>(
+    "/detection/video/auto",
+    form,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 0,
+      onUploadProgress: (e: AxiosProgressEvent) => {
+        if (onProgress && e.total) {
+          onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      },
+    }
+  );
+  return data;
+}
+
+/** Aggregate scan counts for the dashboard. */
+export interface ScanStats {
+  total: number;
+  threats: number;
+  clear: number;
+}
+
+/** One past scan (metadata) for the history list. */
+export interface ScanHistoryItem {
+  id: number;
+  filename: string;
+  model: string;
+  violence_detected: boolean;
+  summary: string;
+  created_at: string;
+}
+
+export async function getStats(): Promise<ScanStats> {
+  const { data } = await api.get<ScanStats>("/detection/stats");
+  return data;
+}
+
+export async function getHistory(): Promise<ScanHistoryItem[]> {
+  const { data } = await api.get<ScanHistoryItem[]>("/detection/history");
+  return data;
+}
+
+/** Full detail of one scan, for the report page. */
+export interface ScanDetail {
+  id: number;
+  filename: string;
+  model: string;
+  violence_detected: boolean;
+  summary: string;
+  created_at: string;
+  result: {
+    model_id?: string;
+    summary?: string;
+    segments?: ViolenceSegment[];
+    detections?: Detection[];
+  };
+}
+
+export async function getScan(id: number): Promise<ScanDetail> {
+  const { data } = await api.get<ScanDetail>(`/detection/scan/${id}`);
   return data;
 }
 

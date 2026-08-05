@@ -42,6 +42,12 @@ class ViolenceSegment(BaseModel):
     start_time: float = Field(description="Start time in seconds from video start.")
     end_time: float = Field(description="End time in seconds from video start.")
     confidence: float = Field(description="Model confidence in [0, 1].")
+    clip_url: str | None = Field(
+        default=None, description="URL of the extracted incident clip, if available."
+    )
+    explanation: str | None = Field(
+        default=None, description="Plain-language explanation of the incident."
+    )
 
 
 class LlmDetectionResponse(BaseModel):

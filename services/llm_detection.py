@@ -32,14 +32,17 @@ _PROMPT = (
     "following:\n"
     "1. VIOLENCE — physical fighting, assault, beating, shooting, explosion, "
     "killing, or weapons (gun/knife/etc.).\n"
-    "2. THEFT/ROBBERY — snatching, mugging, or stealing.\n"
+    "2. THEFT/ROBBERY — snatching, mugging, burglary, shoplifting, or stealing.\n"
     "3. HARASSMENT — unwanted physical contact (groping, grabbing, blocking "
     "someone's path), stalking or following, aggressive intimidation, "
     "threatening gestures, bullying, or someone visibly distressed while "
-    "another person persists despite their attempts to withdraw.\n\n"
+    "another person persists despite their attempts to withdraw.\n"
+    "4. ACCIDENT — road/car accidents, crashes, collisions, a person falling "
+    "or being struck.\n"
+    "5. OTHER — fire, arson, vandalism, or any other dangerous emergency.\n\n"
     "For each event, report when it happens using the video's own timeline "
     "(seconds from the start), and set `category` to \"violence\", \"theft\", "
-    "or \"harassment\".\n\n"
+    "\"harassment\", \"accident\", or \"other\".\n\n"
     "Harassment is judged from behaviour and context, not objects: look for "
     "one person's unwanted persistence and the other's discomfort or retreat. "
     "Only report it when the visual evidence supports it — if intent is "
@@ -63,7 +66,13 @@ _RESPONSE_SCHEMA = {
                     "label": {"type": "string"},
                     "category": {
                         "type": "string",
-                        "enum": ["violence", "theft", "harassment"],
+                        "enum": [
+                            "violence",
+                            "theft",
+                            "harassment",
+                            "accident",
+                            "other",
+                        ],
                     },
                     "description": {"type": "string"},
                     "start_time": {"type": "number"},

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/store/auth";
 import { useScanStore } from "@/store/scan";
+import { mediaUrl } from "@/lib/detection";
 
 function fmtTime(s: number): string {
   if (!isFinite(s)) return "0:00";
@@ -22,6 +23,8 @@ function catClasses(category: string): string {
       return "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400";
     case "harassment":
       return "border-purple-500/40 bg-purple-500/10 text-purple-600 dark:text-purple-400";
+    case "accident":
+      return "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400";
     case "violence":
       return "border-destructive/40 bg-destructive/10 text-destructive";
     default:
@@ -34,6 +37,8 @@ function catBar(category: string): string {
       return "bg-amber-500";
     case "harassment":
       return "bg-purple-500";
+    case "accident":
+      return "bg-blue-500";
     case "violence":
       return "bg-destructive";
     default:
@@ -49,6 +54,7 @@ interface Moment {
   category: string;
   description: string;
   confidence: number;
+  clipUrl?: string;
 }
 
 export default function ResultsPage() {
@@ -100,8 +106,9 @@ export default function ResultsPage() {
       end: s.end_time,
       label: s.label,
       category: s.category || "violence",
-      description: s.description,
+      description: s.explanation || s.description,
       confidence: s.confidence,
+      clipUrl: mediaUrl(s.clip_url),
     }));
   } else if (objectResult) {
     detected = objectResult.weapon_detected;
@@ -210,41 +217,52 @@ export default function ResultsPage() {
             : "No flagged sections"}
         </h2>
 
-        <div className="mt-3 space-y-3">
+        <div className="mt-3 space-y-4">
           {moments.map((m, i) => (
-            <button
-              key={i}
-              onClick={() => seekTo(m.start)}
-              className="flex w-full items-start gap-4 rounded-xl border p-4 text-left transition-colors hover:bg-muted/50"
-            >
-              <div className="shrink-0 font-mono text-sm text-muted-foreground">
-                {fmtTime(m.start)}
-                {m.end > m.start ? `–${fmtTime(m.end)}` : ""}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{m.label}</span>
-                  <span
-                    className={`rounded-full border px-2 py-0.5 text-xs ${catClasses(
-                      m.category
-                    )}`}
-                  >
-                    {m.category}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {(m.confidence * 100).toFixed(0)}%
-                  </span>
+            <div key={i} className="rounded-xl border p-4">
+              <div className="flex items-start gap-4">
+                <div className="shrink-0 font-mono text-sm text-muted-foreground">
+                  {fmtTime(m.start)}
+                  {m.end > m.start ? `–${fmtTime(m.end)}` : ""}
                 </div>
-                {m.description && (
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {m.description}
-                  </p>
-                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{m.label}</span>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-xs ${catClasses(
+                        m.category
+                      )}`}
+                    >
+                      {m.category}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {(m.confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  {m.description && (
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {m.description}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => seekTo(m.start)}
+                  className="shrink-0 self-center text-sm text-primary hover:underline"
+                >
+                  ▶ Jump
+                </button>
               </div>
-              <span className="shrink-0 self-center text-sm text-primary">
-                ▶ Jump
-              </span>
-            </button>
+
+              {/* The extracted clip of just this incident */}
+              {m.clipUrl && (
+                <video
+                  src={m.clipUrl}
+                  controls
+                  preload="metadata"
+                  className="mt-3 w-full rounded-lg border bg-black sm:max-w-md"
+                />
+              )}
+            </div>
           ))}
         </div>
       </main>

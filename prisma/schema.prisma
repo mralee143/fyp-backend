@@ -20,6 +20,7 @@ model User {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
   images         Image[]
+  scans          DetectionScan[]
 
   @@map("users")
 }
@@ -37,5 +38,24 @@ model Image {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("images")
+  @@index([userId])
+}
+
+// A video uploaded for detection + its results (scan history).
+model DetectionScan {
+  id               Int      @id @default(autoincrement())
+  userId           Int      @map("user_id")
+  filename         String   @map("filename")
+  model            String   @map("model") // yolo | owlv2 | action | llm
+  violenceDetected Boolean  @default(false) @map("violence_detected")
+  summary          String?  @map("summary")
+  labels           String[] @default([]) @map("labels") // detected event labels
+  result           Json     @map("result") // full detection response JSON
+  videoUrl         String?  @map("video_url") // stored video location (if any)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("detection_scans")
   @@index([userId])
 }
