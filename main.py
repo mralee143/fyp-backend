@@ -7,9 +7,11 @@ lifecycle, and registers all route handlers.
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from prisma import Prisma
 import logging
+import os
 
 from routes import auth, users, images, detection
 from services.database import set_prisma
@@ -92,6 +94,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Serve extracted incident clips at /media (created on demand).
+os.makedirs("media/clips", exist_ok=True)
+app.mount("/media", StaticFiles(directory="media"), name="media")
 
 
 # Register routers

@@ -1,0 +1,13 @@
+{
+  "name": "mcpmarket-me",
+  "owner": {
+    "name": "MCPmarket",
+    "url": "https://mcpmarket.com"
+  },
+  "plugins": [
+    {
+      "name": "mcpmarket-me",
+      "source": "./"
+    }
+  ]
+}

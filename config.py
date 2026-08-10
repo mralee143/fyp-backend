@@ -68,6 +68,18 @@ class Settings(BaseSettings):
     # OTP Configuration
     otp_expiry_minutes: int = Field(default=10, description="Minutes an email OTP stays valid")
 
+    # Gemini (LLM/VLM) video violence detection
+    gemini_api_key: str = Field(default="", description="Google Gemini API key (aistudio.google.com)")
+    gemini_model: str = Field(
+        default="gemini-2.0-flash",
+        description="Gemini model id used for video analysis",
+    )
+
+    @property
+    def llm_enabled(self) -> bool:
+        """True when a Gemini API key is configured."""
+        return bool(self.gemini_api_key)
+
     @property
     def email_enabled(self) -> bool:
         """True when SMTP credentials are configured; otherwise OTPs are logged only."""

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "mcpmarket-me": {
+      "url": "https://link.mcpmarket.com/aleehaider045/toolkits/me/mcp",
+      "headers": {
+        "Authorization": "Bearer sk_user_Dk4fK1TzWuDRomgh2htCWPCVmu_4SLRK"
+      }
+    }
+  }
+}

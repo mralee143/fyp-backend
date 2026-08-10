@@ -1,40 +1,30 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { errorMessage } from "@/lib/auth";
-import {
-  detectVideo,
-  validateVideo,
-  type VideoDetectionResponse,
-  type DetectOptions,
-} from "@/lib/detection";
+import { detectVideoAuto, validateVideo } from "@/lib/detection";
+import { useScanStore } from "@/store/scan";
 
-const MODELS: { value: DetectOptions["model"]; title: string; hint: string }[] = [
-  { value: "yolo", title: "Weapons (YOLO)", hint: "Fine-tuned: gun / knife / grenade" },
-  { value: "owlv2", title: "Any object (OWLv2)", hint: "Zero-shot free-text queries" },
-];
-
-type Phase = "idle" | "uploading" | "analyzing" | "done";
+type Phase = "idle" | "uploading" | "analyzing";
 
 export function VideoUpload() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
-
-  const [model, setModel] = useState<DetectOptions["model"]>("yolo");
-  const [queries, setQueries] = useState("a gun, a knife, a person fighting");
-  const [numFrames, setNumFrames] = useState(24);
-  const [threshold, setThreshold] = useState(0.2);
-
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState(0);
-  const [result, setResult] = useState<VideoDetectionResponse | null>(null);
+
+  useEffect(() => {
+    if (!previewUrl) return;
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
 
   function pickFile(f: File | undefined) {
     if (!f) return;
@@ -44,38 +34,33 @@ export function VideoUpload() {
       return;
     }
     setFile(f);
-    setResult(null);
+    setPreviewUrl(URL.createObjectURL(f));
     setPhase("idle");
   }
 
   async function onScan() {
     if (!file) return;
-    setResult(null);
     setProgress(0);
     setPhase("uploading");
+    const onProg = (p: number) => {
+      setProgress(p);
+      if (p >= 100) setPhase("analyzing");
+    };
     try {
-      const data = await detectVideo(
-        file,
-        { model, queries, numFrames, threshold },
-        (p) => {
-          setProgress(p);
-          if (p >= 100) setPhase("analyzing");
-        }
-      );
-      setResult(data);
-      setPhase("done");
-      toast.success(
-        data.weapon_detected
-          ? "Threat detected in the video."
-          : "Scan complete — no threats found."
-      );
+      // Backend cascades through all models (Gemini → action → Qwen) and
+      // returns the first that detects an incident.
+      const data = await detectVideoAuto(file, onProg);
+      useScanStore
+        .getState()
+        .setLlmScan(URL.createObjectURL(file), file.name, data);
+      router.push("/results");
     } catch (err) {
       setPhase("idle");
       toast.error(errorMessage(err));
     }
   }
 
-  const busy = phase === "uploading" || phase === "analyzing";
+  const busy = phase !== "idle";
 
   return (
     <Card>
@@ -117,68 +102,15 @@ export function VideoUpload() {
           </p>
         </div>
 
-        {/* Model selector */}
-        <div className="grid gap-3 sm:grid-cols-2">
-          {MODELS.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              onClick={() => setModel(m.value)}
-              className={`rounded-xl border p-4 text-left transition-colors ${
-                model === m.value
-                  ? "border-primary bg-muted"
-                  : "hover:bg-muted/50"
-              }`}
-            >
-              <div className="font-medium">{m.title}</div>
-              <div className="text-sm text-muted-foreground">{m.hint}</div>
-            </button>
-          ))}
-        </div>
-
-        {model === "owlv2" && (
-          <div className="space-y-2">
-            <Label htmlFor="queries">What to look for (comma-separated)</Label>
-            <Input
-              id="queries"
-              value={queries}
-              onChange={(e) => setQueries(e.target.value)}
-              placeholder="a gun, a knife, a person fighting"
-            />
-          </div>
+        {/* Preview of the picked clip */}
+        {previewUrl && (
+          <video
+            src={previewUrl}
+            controls
+            preload="metadata"
+            className="w-full rounded-xl border bg-black"
+          />
         )}
-
-        {/* Params */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="frames">Frames to sample: {numFrames}</Label>
-            <input
-              id="frames"
-              type="range"
-              min={4}
-              max={64}
-              step={1}
-              value={numFrames}
-              onChange={(e) => setNumFrames(Number(e.target.value))}
-              className="w-full"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="threshold">
-              Confidence threshold: {threshold.toFixed(2)}
-            </Label>
-            <input
-              id="threshold"
-              type="range"
-              min={0.05}
-              max={0.9}
-              step={0.05}
-              value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value))}
-              className="w-full"
-            />
-          </div>
-        </div>
 
         {/* Progress */}
         {busy && (
@@ -192,7 +124,7 @@ export function VideoUpload() {
             <p className="text-sm text-muted-foreground">
               {phase === "uploading"
                 ? `Uploading… ${progress}%`
-                : "Analyzing video… this can take a moment."}
+                : "Analyzing with multiple AI models… usually under a minute, longer for clear clips. Keep this tab open."}
             </p>
           </div>
         )}
@@ -200,57 +132,7 @@ export function VideoUpload() {
         <Button onClick={onScan} disabled={!file || busy} className="w-full">
           {busy ? "Working…" : "Run detection"}
         </Button>
-
-        {/* Inline result summary (full results view is Phase 9) */}
-        {result && <ResultSummary result={result} />}
       </CardContent>
     </Card>
-  );
-}
-
-function ResultSummary({ result }: { result: VideoDetectionResponse }) {
-  return (
-    <div className="space-y-4">
-      <div
-        className={`rounded-xl border p-4 ${
-          result.weapon_detected
-            ? "border-destructive/40 bg-destructive/10"
-            : "border-green-500/40 bg-green-500/10"
-        }`}
-      >
-        <p className="font-semibold">
-          {result.weapon_detected
-            ? "⚠️ Threat detected"
-            : "✅ No threats found"}
-        </p>
-        <p className="text-sm text-muted-foreground">
-          {result.detection_count} detection(s) across {result.frames_scanned}{" "}
-          sampled frames · model {result.model_id}
-        </p>
-      </div>
-
-      {result.detections.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left">
-              <tr>
-                <th className="px-3 py-2">Time</th>
-                <th className="px-3 py-2">Label</th>
-                <th className="px-3 py-2">Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.detections.map((d, i) => (
-                <tr key={i} className="border-t">
-                  <td className="px-3 py-2 font-mono">{d.timestamp}</td>
-                  <td className="px-3 py-2">{d.label}</td>
-                  <td className="px-3 py-2">{(d.score * 100).toFixed(0)}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
   );
 }

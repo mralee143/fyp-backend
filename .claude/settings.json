@@ -6,7 +6,23 @@
       "Bash(git merge --no-ff task/5.1-nextjs-scaffold -m ' *)",
       "Bash(git merge --no-ff task/6-auth-ui -m ' *)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
-      "Bash(echo 'localhost:3000 status: __CMDSUB_OUTPUT__')"
+      "Bash(echo 'localhost:3000 status: __CMDSUB_OUTPUT__')",
+      "Bash(qwen_env/Scripts/python.exe qwen_infer.py weapon_knife.mp4)",
+      "Bash(env/Scripts/python.exe -m uvicorn main:app --host 0.0.0.0 --port 8010)",
+      "Bash(qwen_env/Scripts/python.exe qwen_infer.py weapon_gun.mp4)",
+      "Bash(echo \"exit $?\")",
+      "Bash(env/Scripts/python.exe -c \"import main; from services.scan_store import save_scan, get_stats, get_history; print\\('BACKEND IMPORT OK'\\)\")",
+      "Bash(env/Scripts/python.exe -c \"import torch; print\\('torch', torch.__version__, '| cuda:', torch.cuda.is_available\\(\\)\\)\")",
+      "Bash(qwen_env/Scripts/python.exe -c \"import torch; print\\('torch', torch.__version__, '| cuda:', torch.cuda.is_available\\(\\)\\)\")",
+      "Bash(ffmpeg -version)",
+      "Bash(qwen_env/Scripts/python.exe -m pip install --index-url https://download.pytorch.org/whl/cu126 \"torch==2.10.0\" torchvision)",
+      "Bash(qwen_env/Scripts/python.exe -m pip install bitsandbytes)",
+      "Bash(curl -s http://localhost:8010/)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:8010/)",
+      "Bash(echo \"backend :8010 -> $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:8010/ 2>&1\\)\")",
+      "Bash(echo \"frontend:3000 -> $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 2>&1 || echo down\\)\")",
+      "Bash(env/Scripts/python.exe -)",
+      "Bash(echo \"backend :8010 -> $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:8010/\\)\")"
     ]
   }
 }
