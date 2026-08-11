@@ -1,0 +1,47 @@
+# Keep the build context small — everything here is either rebuilt inside the
+# image, host-specific, or far too large to ship (the venvs alone are GBs).
+
+# Virtualenvs (env = backend, qwen_env = local Qwen model)
+env/
+qwen_env/
+.venv/
+venv/
+ENV/
+
+# Python bytecode / test artifacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Local media and sample assets
+media/
+*.mp4
+*.jpg
+*.jpeg
+*.png
+report.json
+
+# Secrets — supplied at run time via env_file / environment, never baked in.
+# Broad on purpose: .env.production carries the production SECRET_KEY and the
+# Docker Hub token, and an image layer is readable by anyone who pulls it.
+.env
+.env.*
+
+# VCS, editors, docs, tooling
+.git/
+.gitignore
+.vscode/
+.idea/
+.kiro/
+.claude/
+*.md
+# ...but the agents' prompts are .md and ARE the application's behaviour.
+!agentic/prompts/
+
+# Host-side helper scripts (migrations, seeding, manual model tests). The image
+# runs the API and the worker; none of these are invoked inside it.
+scripts/

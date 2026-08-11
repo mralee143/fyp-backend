@@ -1,0 +1,1680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SentinelAI — AI Violence, Crime &amp; Weapon Video Detection Platform</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+
+  :root {
+    --ink:      #14181f;
+    --ink-soft: #4a5361;
+    --rule:     #d7dce3;
+    --rule-soft:#eceff3;
+    --accent:   #1f4e79;
+    --accent-2: #0f766e;
+    --warn:     #9a3412;
+    --code-bg:  #f6f7f9;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { font-size: 10.5pt; }
+
+  body {
+    margin: 0;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    line-height: 1.55;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ---------- Title page ---------- */
+  .cover {
+    height: 250mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    page-break-after: always;
+    border-top: 6px solid var(--accent);
+    border-bottom: 1px solid var(--rule);
+  }
+  .cover .kicker {
+    font-size: 10pt; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; margin-bottom: 14mm;
+  }
+  .cover h1 {
+    font-size: 30pt; line-height: 1.15; margin: 0 0 6mm 0; font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .cover h2 {
+    font-size: 14pt; font-weight: 400; color: var(--ink-soft);
+    margin: 0 0 18mm 0; line-height: 1.4;
+  }
+  .cover .meta {
+    border-top: 1px solid var(--rule); padding-top: 6mm;
+    display: grid; grid-template-columns: 42mm 1fr; row-gap: 2.4mm;
+    font-size: 10pt;
+  }
+  .cover .meta dt { color: var(--ink-soft); }
+  .cover .meta dd { margin: 0; font-weight: 600; }
+
+  /* ---------- Structure ---------- */
+  h2.sec {
+    font-size: 16pt; margin: 0 0 4mm 0; padding-bottom: 2.5mm;
+    border-bottom: 2px solid var(--accent); color: var(--accent);
+    page-break-after: avoid;
+  }
+  h3 { font-size: 12.5pt; margin: 8mm 0 2.5mm; page-break-after: avoid; }
+  h4 { font-size: 11pt; margin: 6mm 0 2mm; color: var(--ink-soft);
+       text-transform: uppercase; letter-spacing: .06em; page-break-after: avoid; }
+  section { page-break-before: always; }
+  section.first { page-break-before: avoid; }
+  p { margin: 0 0 3.2mm; text-align: justify; }
+  ul, ol { margin: 0 0 3.2mm; padding-left: 6mm; }
+  li { margin-bottom: 1.4mm; }
+  strong { font-weight: 650; }
+  code {
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 9pt; background: var(--code-bg); padding: 0.4mm 1.1mm;
+    border-radius: 2px; border: 1px solid var(--rule-soft);
+  }
+  pre {
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 8.2pt; line-height: 1.42; background: var(--code-bg);
+    border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+    padding: 3.5mm 4mm; margin: 0 0 4mm; overflow-x: auto;
+    page-break-inside: avoid; white-space: pre;
+  }
+  table {
+    width: 100%; border-collapse: collapse; margin: 0 0 4.5mm;
+    font-size: 9.2pt; page-break-inside: avoid;
+  }
+  caption {
+    caption-side: top; text-align: left; font-size: 9pt; color: var(--ink-soft);
+    padding-bottom: 1.6mm; font-style: italic;
+  }
+  th {
+    background: #eef2f6; text-align: left; font-weight: 650;
+    border-bottom: 1.5px solid var(--accent); padding: 2mm 2.4mm; vertical-align: bottom;
+  }
+  td { border-bottom: 1px solid var(--rule-soft); padding: 2mm 2.4mm; vertical-align: top; }
+  tbody tr:nth-child(even) td { background: #fafbfc; }
+
+  .callout {
+    border: 1px solid var(--rule); border-left: 3px solid var(--accent-2);
+    background: #f4faf9; padding: 3mm 4mm; margin: 0 0 4mm;
+    font-size: 9.6pt; page-break-inside: avoid;
+  }
+  .callout .lbl {
+    display: block; font-size: 8.4pt; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--accent-2); font-weight: 700; margin-bottom: 1.4mm;
+  }
+  .callout.warn { border-left-color: var(--warn); background: #fdf6f2; }
+  .callout.warn .lbl { color: var(--warn); }
+
+  .toc { font-size: 10pt; }
+  .toc ol { list-style: none; padding-left: 0; counter-reset: s; }
+  .toc > ol > li {
+    counter-increment: s; margin-bottom: 1.6mm; font-weight: 600;
+    border-bottom: 1px dotted var(--rule); padding-bottom: 1.2mm;
+  }
+  .toc > ol > li::before { content: counter(s) ".\00a0\00a0"; color: var(--accent); }
+  .toc ol ol { padding-left: 8mm; margin-top: 1.2mm; counter-reset: t; }
+  .toc ol ol li {
+    counter-increment: t; font-weight: 400; color: var(--ink-soft);
+    border: 0; margin-bottom: .8mm; padding: 0;
+  }
+  .toc ol ol li::before { content: counter(s) "." counter(t) "\00a0\00a0"; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+  .card {
+    border: 1px solid var(--rule); border-top: 3px solid var(--accent);
+    padding: 3mm 3.5mm; page-break-inside: avoid;
+  }
+  .card h5 { margin: 0 0 1.5mm; font-size: 10.5pt; }
+  .card p  { margin: 0; font-size: 9.2pt; }
+
+  .tag {
+    display: inline-block; font-size: 7.8pt; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; padding: 0.5mm 1.6mm; border-radius: 2px;
+    background: #e8eef5; color: var(--accent); border: 1px solid #cddaea;
+  }
+  .tag.local  { background: #eaf6f0; color: #14663f; border-color: #c3e4d3; }
+  .tag.cloud  { background: #fdf1e7; color: var(--warn); border-color: #f2d5bd; }
+
+  .nowrap { white-space: nowrap; }
+  .small  { font-size: 9pt; color: var(--ink-soft); }
+  .figure { page-break-inside: avoid; margin-bottom: 5mm; }
+  .figure .cap { font-size: 8.6pt; color: var(--ink-soft); font-style: italic; }
+</style>
+</head>
+<body>
+
+<!-- ============================ COVER ============================ -->
+<div class="cover">
+  <div class="kicker">Final Year Project · Technical Documentation</div>
+  <h1>AI Violence, Crime &amp; Weapon<br>Detection Platform</h1>
+  <h2>An end-to-end video threat-analysis system combining object detection,
+      video action recognition and vision-language models, with an
+      asynchronous processing pipeline and a grounded conversational interface.</h2>
+  <dl class="meta">
+    <dt>Codebase</dt><dd>e:\fyp_backend — FastAPI backend + Next.js frontend</dd>
+    <dt>Backend</dt><dd>Python 3.11 · FastAPI · Prisma ORM · PostgreSQL · Redis · MinIO · ARQ</dd>
+    <dt>Frontend</dt><dd>Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4</dd>
+    <dt>AI models</dt><dd>YOLOv8n · OWLv2 · VideoMAE (×2) · Gemini 2.0 Flash · Qwen2.5-VL · Qwen2.5</dd>
+    <dt>Scale</dt><dd>~16,200 lines of Python · ~6,200 lines of TypeScript · 27 database tables</dd>
+    <dt>Document date</dt><dd>10 August 2026</dd>
+  </dl>
+</div>
+
+<!-- ============================ TOC ============================ -->
+<section class="first">
+<h2 class="sec">Contents</h2>
+<div class="toc">
+<ol>
+  <li>Executive Summary
+    <ol><li>What the system does</li><li>Key results</li></ol></li>
+  <li>Problem Statement &amp; Objectives
+    <ol><li>Threat categories in scope</li><li>Why this is three problems, not one</li></ol></li>
+  <li>System Architecture
+    <ol><li>Component overview</li><li>Request lifecycle</li><li>Process topology</li></ol></li>
+  <li>Technology Stack &amp; Justification
+    <ol><li>Backend</li><li>Infrastructure</li><li>Frontend</li></ol></li>
+  <li><strong>AI Models — Which, and Why</strong>
+    <ol>
+      <li>The selection framework</li>
+      <li>Model inventory</li>
+      <li>YOLOv8n — fine-tuned weapon detector</li>
+      <li>OWLv2 — zero-shot open-vocabulary detector</li>
+      <li>VideoMAE / UCF-Crime — action recognition</li>
+      <li>VideoMAE / violence — binary fight classifier</li>
+      <li>Gemini 2.0 Flash — vision-language reasoning</li>
+      <li>Qwen2.5-VL-7B — offline vision-language fallback</li>
+      <li>Qwen2.5-7B — agent orchestration and text-to-SQL</li>
+      <li>The <code>auto</code> cascade and its ordering</li>
+      <li>Alternatives considered and rejected</li>
+      <li>Inference post-processing</li>
+    </ol></li>
+  <li>Asynchronous Analysis Pipeline
+    <ol><li>Stage-by-stage walkthrough</li><li>Why frames are extracted first</li><li>Failure handling and retries</li></ol></li>
+  <li>Real-Time Event System
+    <ol><li>The event log as single source of truth</li><li>Server-Sent Events</li><li>Signed webhooks</li></ol></li>
+  <li>Database Design (Third Normal Form)
+    <ol><li>The original schema and its defects</li><li>The normalized design</li><li>Documented exceptions</li></ol></li>
+  <li>Conversational AI Layer
+    <ol><li>Agent A — tool-using orchestrator</li><li>Agent B — grounded per-scan analyst</li><li>Agent C — text-to-SQL insights</li></ol></li>
+  <li>REST API Reference
+    <ol><li>Authentication</li><li>Detection and jobs</li><li>Chat, admin and webhooks</li></ol></li>
+  <li>Frontend Application
+    <ol><li>Route structure</li><li>State management and live analysis</li></ol></li>
+  <li>Security Model
+    <ol><li>Authentication and authorisation</li><li>Upload validation and storage</li><li>SQL agent containment</li></ol></li>
+  <li>Performance &amp; Caching</li>
+  <li>Deployment &amp; Operations</li>
+  <li>Testing Strategy</li>
+  <li>Limitations &amp; Future Work</li>
+  <li>Appendices
+    <ol><li>Environment variables</li><li>Source file map</li></ol></li>
+</ol>
+</div>
+</section>
+
+<!-- ============================ 1 ============================ -->
+<section>
+<h2 class="sec">1. Executive Summary</h2>
+
+<h3>1.1 What the system does</h3>
+<p>
+This project is a complete, production-shaped web platform that takes a video —
+CCTV footage, a phone recording, an incident clip — and answers three questions
+about it: <em>was anything dangerous happening</em>, <em>exactly when</em>, and
+<em>what was it</em>. It then lets the operator interrogate that answer in plain
+English.
+</p>
+<p>
+A user signs up (with email OTP verification), uploads a video, and picks a
+detection strategy. The upload returns in about a second with a job identifier;
+analysis itself runs in a separate worker process. Within roughly one second of
+that, preview frames begin appearing in the browser, streamed live over
+Server-Sent Events, while the vision model is still loading. As the analysis
+proceeds, each detected incident arrives as its own event carrying a cut video
+clip, a bounding-boxed version of that clip, a still frame, a timestamp range, a
+confidence score and a plain-language explanation. When the run completes, the
+user can open a chat window attached to that specific scan and ask questions
+that are answered from the stored evidence — with citations back to the exact
+segments and frames used.
+</p>
+
+<h3>1.2 Key results</h3>
+<table>
+  <caption>Table 1.1 — System characteristics as implemented</caption>
+  <thead><tr><th style="width:38%">Dimension</th><th>Delivered</th></tr></thead>
+  <tbody>
+    <tr><td>Threat categories</td><td>Violence, Theft/Robbery, Harassment, Accident, Other hazard — five categories with severity weighting</td></tr>
+    <tr><td>Detection backends</td><td>Seven selectable strategies over six distinct model families</td></tr>
+    <tr><td>Time to first visible content</td><td>≈ 1.0 s after upload (frames precede model loading)</td></tr>
+    <tr><td>End-to-end analysis (YOLO, 12 frames)</td><td>≈ 7.6 s measured on the development machine (RTX 4060)</td></tr>
+    <tr><td>Database</td><td>27 tables, normalized to Third Normal Form, no JSON or array columns in the operational schema</td></tr>
+    <tr><td>API surface</td><td>48 REST endpoints across 9 routers, plus one SSE stream and an outbound webhook channel</td></tr>
+    <tr><td>Delivery guarantees</td><td>Gap-free SSE replay via <code>Last-Event-ID</code>; HMAC-SHA256 signed webhooks with timestamped replay protection and exponential backoff</td></tr>
+    <tr><td>Conversational layer</td><td>Three cooperating agents: tool-using orchestrator, grounded scan analyst, and a sandboxed text-to-SQL analyst</td></tr>
+    <tr><td>Test suite</td><td>21 test modules, property-based testing with Hypothesis alongside conventional integration tests</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <span class="lbl">The central engineering claim</span>
+  No single model solves this problem. Detecting a gun in a frame, recognising
+  that two people are fighting, and understanding that someone is being harassed
+  are three <em>different machine-learning problems</em> with different input
+  representations, different training data and different failure modes. The
+  system's design is a direct consequence of that fact: it selects, cascades and
+  combines specialised models rather than pretending one architecture covers the
+  whole domain. Section 5 is the full argument.
+</div>
+</section>
+
+<!-- ============================ 2 ============================ -->
+<section>
+<h2 class="sec">2. Problem Statement &amp; Objectives</h2>
+
+<h3>2.1 Threat categories in scope</h3>
+<p>
+The platform was scoped around six target detections drawn from realistic
+security-monitoring needs: <strong>fighting</strong>, <strong>snatching and
+robbery</strong>, <strong>shooting or killing</strong>,
+<strong>harassment and assault</strong>, <strong>bombs and explosions</strong>,
+and <strong>visible weapons</strong> (gun, knife, grenade). These are normalized
+in the database into five categories with an assigned severity that drives
+colour and ordering in the user interface.
+</p>
+
+<table>
+  <caption>Table 2.1 — Incident categories as seeded in <code>services/reference_data.py</code></caption>
+  <thead><tr><th>Code</th><th>Display name</th><th>Severity</th><th>Typical source</th></tr></thead>
+  <tbody>
+    <tr><td><code>violence</code></td><td>Violence</td><td>5 — critical</td><td>Action classifier, violence classifier, Gemini</td></tr>
+    <tr><td><code>theft</code></td><td>Theft / Robbery</td><td>4 — high</td><td>UCF-Crime action classes, Gemini</td></tr>
+    <tr><td><code>harassment</code></td><td>Harassment</td><td>4 — high</td><td>Gemini only (see §5.7)</td></tr>
+    <tr><td><code>accident</code></td><td>Accident</td><td>3 — medium</td><td>UCF-Crime <code>RoadAccidents</code>, Gemini</td></tr>
+    <tr><td><code>other</code></td><td>Other Hazard</td><td>2 — low</td><td>Fire, arson, vandalism, arrest</td></tr>
+  </tbody>
+</table>
+
+<h3>2.2 Why this is three problems, not one</h3>
+<p>
+The single most consequential design decision in the project was recognising
+early that the target list splits along a technical fault line that has nothing
+to do with how a human would group the categories.
+</p>
+
+<table>
+  <caption>Table 2.2 — The three detection problems and their required model class</caption>
+  <thead>
+    <tr><th style="width:20%">Problem class</th><th style="width:26%">Question being asked</th>
+        <th style="width:26%">Required input representation</th><th>Targets covered</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Object presence</strong></td>
+      <td>"Is a dangerous <em>thing</em> visible in this image?"</td>
+      <td>A single still frame. Spatial reasoning only.</td>
+      <td>Gun, knife, grenade, explosive, bomb</td>
+    </tr>
+    <tr>
+      <td><strong>Action recognition</strong></td>
+      <td>"What are these people <em>doing</em> over the last few seconds?"</td>
+      <td>An ordered stack of 16 frames. Motion and temporal reasoning.</td>
+      <td>Fighting, assault, robbery, shooting, explosion, road accident, arson, vandalism</td>
+    </tr>
+    <tr>
+      <td><strong>Contextual/social inference</strong></td>
+      <td>"Is what I am watching <em>unwanted</em>, coercive or distressing?"</td>
+      <td>The whole video plus world knowledge about human intent and consent.</td>
+      <td>Harassment, intimidation, stalking, bullying</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+This split has hard consequences. An object detector, no matter how accurate,
+<strong>cannot ever</strong> report that two people are fighting when no weapon
+is present — it has no access to motion, and each frame is scored in isolation.
+Conversely, an action classifier trained on 16-frame clips cannot report the
+pixel coordinates of a knife. And neither can distinguish an affectionate hug
+from a coercive grab, because that distinction lives in intent, persistence and
+the other person's reaction — semantics that only a model with broad world
+knowledge can access.
+</p>
+
+<div class="callout warn">
+  <span class="lbl">Harassment is a special case</span>
+  There is no off-the-shelf harassment classifier, and the project deliberately
+  did not attempt to train one. Harassment is defined by intent, consent and
+  persistence rather than by any visual signature; the UCF-Crime label set has
+  no <code>harassment</code> class at all (<code>Abuse</code> and
+  <code>Assault</code> are the nearest proxies and are poor ones). Current
+  research addresses this with vision-language models and prompting, which is
+  the route taken here — the Gemini path (§5.7) is the only backend that reports
+  harassment, and its prompt explicitly instructs the model to judge from
+  behaviour and to lower confidence or abstain when intent is ambiguous.
+</div>
+
+<h4>Project objectives</h4>
+<ol>
+  <li>Cover all six target detections by routing each to a model class capable of detecting it, rather than forcing one model to cover all.</li>
+  <li>Never block the browser on a vision model — analysis must be asynchronous with live progress.</li>
+  <li>Persist every result in a properly normalized relational schema, with no derived data stored and no JSON blobs.</li>
+  <li>Make every reported incident <em>evidenced</em>: a timestamp range, a confidence, a still, a cut clip and a plain-language explanation.</li>
+  <li>Let a non-technical operator interrogate a finished analysis in natural language, with citations.</li>
+  <li>Degrade gracefully — a missing API key, an exhausted quota or a downed cache must never fail the whole run.</li>
+</ol>
+</section>
+
+<!-- ============================ 3 ============================ -->
+<section>
+<h2 class="sec">3. System Architecture</h2>
+
+<h3>3.1 Component overview</h3>
+<div class="figure">
+<pre>
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  BROWSER                Next.js 16 · React 19 · TypeScript · Tailwind 4     │
+│  (auth) login/signup/verify   (app) dashboard · analyze · report · chat     │
+└───────────┬──────────────────────────────────────┬──────────────────────────┘
+            │ REST + JWT                           │ SSE (live progress)
+┌───────────▼──────────────────────────────────────▼──────────────────────────┐
+│  FASTAPI  (uvicorn :8000)                                                   │
+│  routers: auth · users · images · detection · jobs · scan_chat · chat ·     │
+│           admin · webhooks                                                  │
+│  middleware: OAuth2 bearer → JWT decode → user lookup                       │
+└──┬──────────────┬─────────────────┬──────────────────┬─────────────────┬────┘
+   │              │                 │                  │                 │
+┌──▼───────┐ ┌────▼──────┐ ┌────────▼────────┐ ┌───────▼──────┐ ┌────────▼────┐
+│PostgreSQL│ │  MinIO    │ │      Redis      │ │  Gemini API  │ │ Ollama /    │
+│  :5434   │ │ :9000     │ │      :6379      │ │  (external)  │ │ qwen_env    │
+│ 27 tables│ │ videos    │ │ ARQ queue       │ │ 2.0-flash    │ │ Qwen2.5     │
+│ Prisma   │ │ frames    │ │ cache           │ │              │ │ (local)     │
+│          │ │ clips     │ │ pub/sub → SSE   │ │              │ │             │
+└──────────┘ └───────────┘ └────────┬────────┘ └──────────────┘ └─────────────┘
+                                    │ ARQ
+┌───────────────────────────────────▼─────────────────────────────────────────┐
+│  ARQ WORKER  (separate process, max_jobs = 2)                               │
+│  download → probe → sample frames → RUN MODEL → persist → clip → caption    │
+│                                                                             │
+│  models: YOLOv8n · OWLv2 · VideoMAE-UCF-Crime · VideoMAE-Violence ·         │
+│          Gemini 2.0 Flash · Qwen2.5-VL-7B          (torch, CUDA when avail.)│
+└─────────────────────────────────────────────────────────────────────────────┘
+</pre>
+<div class="cap">Figure 3.1 — Component topology. The worker is a separate OS process; the API never loads a vision model.</div>
+</div>
+
+<h3>3.2 Request lifecycle</h3>
+<p>
+The defining property of the architecture is that <strong>the HTTP request and
+the model inference are completely decoupled</strong>. A <code>POST</code> to
+<code>/detection/jobs</code> does five things and returns: it validates the
+upload, computes a SHA-256 checksum (a duplicate upload becomes a lookup rather
+than a second analysis run), streams the bytes into MinIO, inserts a
+<code>videos</code> row and an <code>analysis_jobs</code> row, and pushes a job
+onto the Redis-backed ARQ queue. It responds <code>202 Accepted</code> with a
+public job UUID in roughly one second, before any model has been touched.
+</p>
+<p>
+The browser immediately opens <code>GET /detection/jobs/{id}/events</code>, a
+Server-Sent Events stream. Everything after this point arrives as events. The
+older synchronous endpoints (<code>/detection/video</code>,
+<code>/detection/video/llm</code>, and so on) remain functional for direct API
+consumers and now write into the same normalized tables, but the interactive
+path is entirely asynchronous.
+</p>
+
+<h3>3.3 Process topology</h3>
+<table>
+  <caption>Table 3.1 — The four processes and their failure consequences</caption>
+  <thead><tr><th style="width:32%">Process</th><th style="width:14%">Port</th><th>What breaks without it</th></tr></thead>
+  <tbody>
+    <tr><td>Docker: Postgres + Redis + MinIO</td><td>5434 / 6379 / 9000</td><td>Everything</td></tr>
+    <tr><td>FastAPI (<code>uvicorn main:app</code>)</td><td>8000</td><td>Everything</td></tr>
+    <tr><td>ARQ worker (<code>arq worker.WorkerSettings</code>)</td><td>—</td><td>Uploads are accepted but stay <code>QUEUED</code> forever — no analysis ever runs</td></tr>
+    <tr><td>Next.js (<code>npm run dev</code>)</td><td>3000</td><td>The user interface (the API stays fully usable)</td></tr>
+  </tbody>
+</table>
+<p class="small">
+Redis is treated as optional at the API layer: the application boots without it,
+logging a warning. Caching silently becomes a pass-through, the SSE endpoint
+degrades to polling the <code>job_events</code> table, and only job enqueueing
+genuinely stops working. This is deliberate — the cache must never be a single
+point of failure.
+</p>
+</section>
+
+<!-- ============================ 4 ============================ -->
+<section>
+<h2 class="sec">4. Technology Stack &amp; Justification</h2>
+
+<h3>4.1 Backend</h3>
+<table>
+  <caption>Table 4.1 — Backend technology choices</caption>
+  <thead><tr><th style="width:24%">Technology</th><th style="width:14%">Version</th><th>Why this and not the alternative</th></tr></thead>
+  <tbody>
+    <tr><td>FastAPI</td><td>0.104.1</td>
+      <td>Native <code>async</code>, which matters because a single request may await object storage, the database and Redis concurrently. Automatic OpenAPI generation gives the frontend a contract for free. Django REST Framework would have imposed a synchronous ORM on an I/O-bound workload.</td></tr>
+    <tr><td>Prisma (Python)</td><td>0.11.0</td>
+      <td>Generates fully typed async models from a single declarative schema file, so the 3NF design in §8 is enforced by the type checker rather than by convention. SQLAlchemy was the alternative; Prisma's schema file also doubles as readable design documentation.</td></tr>
+    <tr><td>Pydantic v2 + pydantic-settings</td><td>2.5.0</td>
+      <td>Configuration is validated at import time — a missing <code>DATABASE_URL</code> fails the process at startup with a clear message rather than at the first query. Request and response schemas are validated at the framework boundary.</td></tr>
+    <tr><td>ARQ</td><td>0.26.3</td>
+      <td><strong>Chosen over Celery specifically because it is asyncio-native.</strong> The worker shares the same async Prisma client and the same service modules as the API — no duplicated data layer, no sync/async bridging. Celery's process model would have required a parallel synchronous ORM.</td></tr>
+    <tr><td>python-jose + bcrypt</td><td>3.3.0 / 4.1.2</td>
+      <td>HS256 JWTs with a configurable expiry; bcrypt with per-password salt generation. Passwords are truncated to bcrypt's 72-byte limit consistently on both hash and verify paths.</td></tr>
+    <tr><td>httpx</td><td>0.25.2</td>
+      <td>Used directly against the Gemini REST API instead of the official SDK, to avoid dependency conflicts with the pinned FastAPI/Pydantic stack — a real constraint given the sizeable ML dependency tree already present.</td></tr>
+    <tr><td>PyTorch + Transformers</td><td>2.10 (cu126)</td>
+      <td>Every local model is a Hugging Face checkpoint loaded through <code>transformers</code>; CUDA is used automatically when a GPU build is installed, with a transparent CPU fallback.</td></tr>
+    <tr><td>Ultralytics</td><td>latest</td>
+      <td>YOLOv8 runtime, with weights pulled from the Hugging Face Hub and cached locally on first use.</td></tr>
+    <tr><td>decord / OpenCV</td><td>—</td>
+      <td>Frame decoding. <code>decord</code> gives fast random-access indexed reads (needed for even sampling across a whole video); OpenCV is used where sequential window reads are simpler.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <span class="lbl">A platform-specific detail worth recording</span>
+  On Windows, <code>torch</code> must be imported <em>before</em> <code>decord</code>.
+  Importing them the other way round causes decord's DLLs to break torch's
+  <code>c10.dll</code> load order, producing <code>WinError 1114</code>. Every
+  module that uses both carries an explicit ordered import with a comment
+  explaining why, so the ordering is not "cleaned up" by a future linter pass.
+</div>
+
+<h3>4.2 Infrastructure</h3>
+<table>
+  <caption>Table 4.2 — Infrastructure services</caption>
+  <thead><tr><th style="width:24%">Service</th><th style="width:14%">Port</th><th>Role in the system</th></tr></thead>
+  <tbody>
+    <tr><td>PostgreSQL 14</td><td>5434 → 5432</td>
+      <td>The system of record. Mapped to host port 5434 because native Windows PostgreSQL installations already hold 5432 and 5433 on the development machine.</td></tr>
+    <tr><td>MinIO</td><td>9000 / 9001</td>
+      <td>S3-compatible object storage in two buckets: <code>user-images</code> for direct uploads and <code>vision-media</code> for videos, extracted frames and incident clips. Binary data never enters the database — rows store an <code>object_key</code>, and the browser receives time-limited presigned URLs.</td></tr>
+    <tr><td>Redis 7</td><td>6379</td>
+      <td>Three distinct roles: ARQ job broker, response cache, and the pub/sub channel that fans job events out to SSE subscribers. Runs with AOF persistence so queued jobs survive a restart, and an <code>allkeys-lru</code> eviction policy capped at 512 MB.</td></tr>
+  </tbody>
+</table>
+
+<h3>4.3 Frontend</h3>
+<table>
+  <caption>Table 4.3 — Frontend technology choices</caption>
+  <thead><tr><th style="width:24%">Technology</th><th style="width:14%">Version</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>Next.js (App Router)</td><td>16.2.10</td><td>Route groups separate the authenticated shell <code>(app)</code> from the unauthenticated flows <code>(auth)</code>, each with its own layout.</td></tr>
+    <tr><td>React</td><td>19.2.4</td><td>UI runtime.</td></tr>
+    <tr><td>TypeScript</td><td>5.x</td><td>Typed API clients in <code>src/lib/</code> mirror the backend's Pydantic schemas.</td></tr>
+    <tr><td>Tailwind CSS 4 + shadcn/ui</td><td>4.x</td><td>Utility-first styling with an accessible component base.</td></tr>
+    <tr><td>Zustand</td><td>5.0.14</td><td>Client state for auth, chat and the active scan — chosen over Redux for the far smaller surface area on a project of this size.</td></tr>
+    <tr><td>react-hook-form + Zod</td><td>7.81 / 4.4</td><td>Form handling with schema validation matching the backend's rules.</td></tr>
+    <tr><td>ApexCharts</td><td>4.7.0</td><td>Admin analytics charts.</td></tr>
+    <tr><td>Axios</td><td>1.18.1</td><td>HTTP client with a JWT interceptor attaching the bearer token to every request.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============================ 5 ============================ -->
+<section>
+<h2 class="sec">5. AI Models — Which, and Why</h2>
+<p>
+This is the core of the project. Six model families are integrated behind seven
+selectable strategies. This section states what each model is, precisely why it
+was chosen, what it cannot do, and how the choices compose.
+</p>
+
+<h3>5.1 The selection framework</h3>
+<p>
+Every model in the system was selected against four criteria, applied in order:
+</p>
+<ol>
+  <li><strong>Does its input representation match the question?</strong> A per-frame detector cannot answer a temporal question; a 16-frame clip classifier cannot answer a spatial one. This criterion alone eliminates most candidates for any given target.</li>
+  <li><strong>Is a suitable pre-trained checkpoint available?</strong> The project has no annotated dataset of its own and no training budget. Every model must be either pre-trained on a matching public dataset, zero-shot, or accessible as an API.</li>
+  <li><strong>What is the cost of being wrong?</strong> In a security context a false negative is far more expensive than a false positive, which argues for cascading multiple detectors rather than trusting one.</li>
+  <li><strong>Can the system function without it?</strong> Cloud models carry quota and connectivity risk. Every cloud dependency must have a local fallback, and every local model must be optional.</li>
+</ol>
+
+<h3>5.2 Model inventory</h3>
+<table>
+  <caption>Table 5.1 — Every model integrated, as registered in <code>detection_models</code></caption>
+  <thead>
+    <tr><th style="width:13%">Code</th><th style="width:24%">Checkpoint</th><th style="width:11%">Class</th>
+        <th style="width:10%">Runs</th><th>Detects</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>yolo</code></td>
+      <td><code>Subh775/Threat-Detection-YOLOv8n</code></td>
+      <td>Object detector</td><td><span class="tag local">Local</span></td>
+      <td>Gun, Knife, Grenade, Explosive — with pixel boxes and per-frame timestamps</td>
+    </tr>
+    <tr>
+      <td><code>owlv2</code></td>
+      <td><code>google/owlv2-base-patch16-ensemble</code></td>
+      <td>Zero-shot detector</td><td><span class="tag local">Local</span></td>
+      <td>Any object nameable in free text, without retraining</td>
+    </tr>
+    <tr>
+      <td><code>action</code></td>
+      <td><code>OPear/videomae-large-finetuned-UCF-Crime</code></td>
+      <td>Video classifier</td><td><span class="tag local">Local</span></td>
+      <td>13 crime classes: Fighting, Assault, Abuse, Robbery, Shooting, Explosion, Arson, Burglary, Shoplifting, Stealing, Vandalism, RoadAccidents, Arrest</td>
+    </tr>
+    <tr>
+      <td><code>violence</code></td>
+      <td><code>cliffer1/videomae-base-finetuned-kinetics-<br>violence-nonviolence-tuned</code></td>
+      <td>Video classifier</td><td><span class="tag local">Local</span></td>
+      <td>Binary violence / non-violence over sliding windows</td>
+    </tr>
+    <tr>
+      <td><code>llm</code></td>
+      <td><code>gemini-2.0-flash</code></td>
+      <td>Vision-language</td><td><span class="tag cloud">Cloud</span></td>
+      <td>All five categories including <strong>harassment</strong>, with natural-language descriptions and timestamps</td>
+    </tr>
+    <tr>
+      <td><code>qwen</code></td>
+      <td><code>Qwen/Qwen2.5-VL-7B-Instruct</code></td>
+      <td>Vision-language</td><td><span class="tag local">Local</span></td>
+      <td>Same shape as Gemini, fully offline, substantially slower</td>
+    </tr>
+    <tr>
+      <td><code>auto</code></td>
+      <td>— (cascade)</td>
+      <td>Orchestration</td><td><span class="tag local">Local</span></td>
+      <td>Runs Gemini → violence → action in order, first hit wins</td>
+    </tr>
+  </tbody>
+</table>
+<p class="small">
+A seventh conversational model, <code>Qwen2.5-7B</code> served over an
+OpenAI-compatible endpoint, drives the agent layer and is described in §5.9.
+</p>
+
+<h3>5.3 YOLOv8n — fine-tuned weapon detector</h3>
+<p class="small"><code>services/yolo_detection.py</code></p>
+<h4>What it is</h4>
+<p>
+A YOLOv8-nano single-stage object detector, fine-tuned on a weapon dataset to
+four fixed classes (Gun, Knife, Grenade, Explosive). The weights are downloaded
+from the Hugging Face Hub on first use and cached; a local <code>.pt</code> file
+can be substituted via <code>YOLO_MODEL_PATH</code> so that custom-trained
+weights drop in without a code change.
+</p>
+<h4>Why it was chosen</h4>
+<ul>
+  <li><strong>Precision on the exact classes that matter.</strong> A model fine-tuned on real firearms and blades substantially outperforms a general-purpose or zero-shot detector on those specific classes — which is the whole point of the weapon path.</li>
+  <li><strong>Speed.</strong> The nano variant is the smallest YOLOv8 configuration. Sampling 24 frames across a video and running detection on each completes in seconds, which is what makes it a viable interactive default.</li>
+  <li><strong>Localisation, not just classification.</strong> It returns <code>[x1,y1,x2,y2]</code> boxes, which the pipeline stores as four separate numeric columns and uses to draw annotated frames and boxed clips. No classifier can produce this.</li>
+  <li><strong>Single-stage.</strong> One forward pass per frame, unlike two-stage detectors (Faster R-CNN) that propose regions and then classify them — roughly an order of magnitude slower for no benefit at this object size.</li>
+</ul>
+<h4>What it cannot do</h4>
+<p>
+It scores each frame independently. It has no concept of motion, so it cannot
+detect a fight, a robbery or an accident. It is also closed-vocabulary: anything
+outside its four trained classes is invisible to it. Both limitations are the
+reason the other models exist.
+</p>
+
+<h3>5.4 OWLv2 — zero-shot open-vocabulary detector</h3>
+<p class="small"><code>services/video_detection.py</code>, <code>services/explain.py</code></p>
+<h4>What it is</h4>
+<p>
+Google's OWLv2 (Open-World Localization v2), a vision transformer that performs
+open-vocabulary object detection: it takes <em>text queries</em> alongside the
+image and localises whatever those queries describe, with no training required
+for new classes. The system ships sixteen default queries — <code>"a gun"</code>,
+<code>"a rifle"</code>, <code>"a machete"</code>, <code>"a baseball bat"</code>,
+<code>"a person holding a weapon"</code>, <code>"blood"</code>,
+<code>"a masked person"</code> and others — and the API accepts arbitrary query
+lists at request time.
+</p>
+<h4>Why it was chosen</h4>
+<ul>
+  <li><strong>It removes the retraining bottleneck.</strong> YOLO knows four classes forever. Adding "a crowbar" to OWLv2 costs one string in a request. For a project with no annotation budget this is decisive.</li>
+  <li><strong>It has a second, less obvious job.</strong> OWLv2 powers the <em>explanation engine</em> (<code>services/explain.py</code>). When the action model reports "Road Accident", OWLv2 is run over the clip with a vehicle/weapon/person query set, and the resulting object counts are composed into a sentence: <em>"A road accident involving a car and a motorcycle, with people present."</em> This turns a bare class label into something an operator can act on — and it does so locally, with no API call.</li>
+  <li><strong>It cross-checks YOLO.</strong> Two independent detectors disagreeing on a weapon is itself useful signal.</li>
+</ul>
+<h4>What it cannot do, and how that is mitigated</h4>
+<p>
+Zero-shot generality costs precision: OWLv2 hallucinates low-confidence false
+positives, typically reporting a "truck" in a motorbike collision. The
+explanation engine handles this with a <em>relative dominance</em> filter rather
+than a fixed threshold — an object must appear in at least three sampled frames
+<em>and</em> reach at least half the count of the most-seen object to be
+mentioned. Genuine objects appear consistently across frames; hallucinations do
+not, so they fall away without needing a tuned absolute cutoff.
+</p>
+
+<h3>5.5 VideoMAE / UCF-Crime — action recognition</h3>
+<p class="small"><code>services/action_detection.py</code></p>
+<h4>What it is</h4>
+<p>
+VideoMAE-Large fine-tuned on the <strong>UCF-Crime</strong> dataset — 128 hours
+of real surveillance footage across thirteen anomaly classes. VideoMAE
+(Video Masked Autoencoder) is a video vision transformer pre-trained by
+reconstructing heavily masked spatio-temporal patches, which makes it unusually
+data-efficient for video classification. The checkpoint consumes fixed 16-frame
+clips.
+</p>
+<h4>Why it was chosen</h4>
+<ul>
+  <li><strong>It is the only model class that can answer the temporal question.</strong> Fighting, robbery and assault have no reliable single-frame signature. They are defined by how the scene changes. A transformer with temporal attention over a 16-frame stack sees that; a per-frame detector structurally cannot.</li>
+  <li><strong>UCF-Crime is the closest public dataset to the project's target list.</strong> Its classes map almost one-to-one onto the requirements: Fighting, Assault, Abuse, Robbery, Shooting, Explosion, RoadAccidents, Arson, Vandalism, Burglary, Shoplifting, Stealing, Arrest. Alternatives were narrower — RWF-2000 and Real-Life-Violence-Situations are binary violence datasets; Hockey Fight is a single domain.</li>
+  <li><strong>Real surveillance footage.</strong> UCF-Crime is untrimmed CCTV, so the domain gap to the project's actual input is small — a serious advantage over models trained on curated action clips such as Kinetics.</li>
+  <li><strong>It is checkpoint-agnostic.</strong> Labels are read from <code>model.config.id2label</code> rather than hard-coded, so swapping in any Hugging Face video-classification checkpoint via <code>ACTION_MODEL_ID</code> requires no code change.</li>
+</ul>
+<h4>How it is run</h4>
+<p>
+A sliding window of 3 seconds with a 2-second stride is passed across the video.
+The overlap is deliberate: a non-overlapping window would miss an event that
+straddles a boundary. Each window is classified; windows whose top class is a
+"normal" class or whose confidence falls below threshold are discarded. Surviving
+windows of the same label that touch or overlap are merged into a single segment,
+so a ten-second fight is reported as one incident rather than five.
+</p>
+<div class="callout">
+  <span class="lbl">Two calibration decisions taken from observed behaviour</span>
+  <strong>Merged segments retain a peak.</strong> A merged span can cover an
+  entire clip, making its midpoint meaningless. The merge therefore records
+  <code>peak_second</code> — the midpoint of the highest-scoring constituent
+  window — because that is the moment the model was most certain, and therefore
+  the frame worth extracting and showing.
+  <br><br>
+  <strong>Confusable classes are presented honestly.</strong> On clean or
+  out-of-distribution footage the model routinely confuses Abuse, Assault and
+  Fighting with each other while still correctly identifying that physical
+  violence is occurring. Rather than display a confidently wrong sub-label, all
+  three are surfaced as <strong>"Fighting / Assault"</strong>. Classes the model
+  is reliable on — Shooting, Explosion, Road Accident — keep their proper names.
+  This is a UI-honesty decision: report the granularity the model actually
+  supports, not the granularity its label set advertises.
+</div>
+
+<h3>5.6 VideoMAE / violence — binary fight classifier</h3>
+<p class="small"><code>services/violence_detection.py</code></p>
+<h4>What it is and why a second video model exists</h4>
+<p>
+A VideoMAE-Base checkpoint fine-tuned on violence/non-violence datasets — a
+purely binary classifier over the same sliding-window scheme.
+</p>
+<p>
+Adding a second video model may look redundant, but it addresses a measured
+weakness. The thirteen-way UCF-Crime classifier must distribute probability mass
+across all thirteen classes, and on ordinary footage it over-predicts weak
+"Fighting/Assault" at around 0.65 confidence, while genuine incidents score 0.95
+and above. A binary classifier faces a far easier decision boundary and is
+consequently much more reliable on the single most common category — fights and
+assault.
+</p>
+<p>
+The system exploits this directly in the <code>auto</code> cascade: the
+thirteen-way model is held to a deliberately high bar of <strong>0.85</strong>,
+and borderline fights are handed to the binary classifier instead. Each model is
+used in the regime where it is strong, rather than being forced to be right
+everywhere.
+</p>
+
+<h3>5.7 Gemini 2.0 Flash — vision-language reasoning</h3>
+<p class="small"><code>services/llm_detection.py</code></p>
+<h4>What it is</h4>
+<p>
+Google's Gemini 2.0 Flash, a multimodal model that accepts native video input.
+The integration uses the REST API directly through <code>httpx</code>: the video
+is uploaded via the resumable <strong>Files API</strong> (which supports files far
+larger than inline-payload limits), polled until it reaches <code>ACTIVE</code>
+state, and then analysed with a structured prompt.
+</p>
+<h4>Why it was chosen — three reasons, in order of importance</h4>
+<ol>
+  <li>
+    <strong>It is the only path to harassment detection.</strong> This is the
+    decisive argument. No trainable classifier exists for harassment because it
+    is not a visual pattern — it is an inference about intent, consent and
+    persistence. The prompt directs the model to look for "one person's unwanted
+    persistence and the other's discomfort or retreat", and instructs it to lower
+    confidence or abstain when intent is ambiguous. A vision-language model with
+    broad world knowledge is currently the only mechanism that can make this
+    judgement at all.
+  </li>
+  <li>
+    <strong>It produces explanations, not just labels.</strong> Every reported
+    segment carries a natural-language <code>description</code> alongside its
+    timestamps and confidence. The classifiers output a class index; Gemini
+    outputs something an operator can read and act on.
+  </li>
+  <li>
+    <strong>It covers all five categories in a single pass</strong> — violence,
+    theft, harassment, accident and other hazards — where the local models each
+    cover a slice.
+  </li>
+</ol>
+<h4>How output reliability is enforced</h4>
+<p>
+The request sets <code>response_mime_type: application/json</code> together with
+an explicit OpenAPI-subset <code>response_schema</code>. The model is
+<em>constrained</em> to emit conforming JSON — <code>violence_detected</code>,
+<code>summary</code>, and a <code>segments</code> array whose
+<code>category</code> field is restricted by <code>enum</code> to the five valid
+values. This removes an entire class of failure: there is no prose to parse, no
+regex extraction, and no possibility of an unrecognised category reaching the
+database.
+</p>
+<div class="callout warn">
+  <span class="lbl">Accepted trade-offs</span>
+  Gemini is the only cloud dependency in the detection path. It requires an API
+  key, incurs per-call cost, is subject to quota exhaustion, and means video
+  content leaves the machine — a genuine privacy consideration for surveillance
+  footage. Every one of these is mitigated by design: the <code>auto</code>
+  cascade treats a Gemini failure (missing key, exhausted quota, network error)
+  as a skip rather than an error and continues to the local models, and the
+  <code>qwen</code> backend below provides an offline equivalent. The system is
+  fully functional with no API key at all — it simply loses harassment detection.
+</div>
+
+<h3>5.8 Qwen2.5-VL-7B — offline vision-language fallback</h3>
+<p class="small"><code>services/qwen_detection.py</code>, <code>qwen_infer.py</code></p>
+<p>
+Alibaba's Qwen2.5-VL-7B-Instruct is an open-weights vision-language model with
+native video understanding. It exists in this system for one reason: to provide
+Gemini's capability — natural-language incident description with timestamps —
+<strong>without sending footage off the machine</strong>. For deployments where
+surveillance video cannot leave the premises, this is the difference between the
+platform being usable and not.
+</p>
+<h4>The subprocess isolation decision</h4>
+<p>
+Qwen2.5-VL requires a bleeding-edge <code>transformers</code> build plus
+<code>qwen-vl-utils</code> and <code>decord</code>, whose version constraints
+conflict with the backend's pinned FastAPI/Pydantic/Prisma stack. Rather than
+compromise the API's dependency tree, the model lives in a completely separate
+virtual environment (<code>qwen_env</code>) and is invoked as a
+<strong>subprocess</strong>. The child process prints its structured result on a
+single line prefixed with a sentinel (<code>__QWEN_RESULT__</code>), which the
+parent locates in stdout and parses as JSON.
+</p>
+<p>
+This is an unglamorous but genuinely correct engineering choice: it buys hard
+dependency isolation and crash containment (a CUDA out-of-memory error kills the
+child, not the API) at the cost of process-spawn overhead — negligible against a
+multi-minute inference. The honest downside is speed: 7-billion-parameter
+inference on CPU is slow enough that the timeout is set to 1800 seconds.
+</p>
+
+<h3>5.9 Qwen2.5-7B — agent orchestration and text-to-SQL</h3>
+<p class="small"><code>services/qwen_chat.py</code>, <code>services/chat_agent.py</code>, <code>services/db_agent.py</code></p>
+<p>
+A separate, text-only Qwen2.5-7B model drives the conversational layer. It is
+reached over any OpenAI-compatible endpoint — the default targets a local Ollama
+install, but vLLM, llama.cpp or DashScope work unchanged.
+</p>
+<h4>Why a local model for the agent, and why Qwen</h4>
+<ul>
+  <li><strong>Volume.</strong> The agent is called on every conversational turn and may make several tool round-trips per message. Routing that to a paid API would dominate the system's running cost; a local model makes conversation free.</li>
+  <li><strong>Reliable function calling.</strong> Qwen2.5 was trained for tool use and emits well-formed tool calls, which is the single hard requirement for an orchestrator.</li>
+  <li><strong>Competent SQL generation.</strong> The database insights agent needs a model that writes correct PostgreSQL against a described schema — a documented Qwen2.5 strength.</li>
+</ul>
+<h4>Protocol robustness</h4>
+<p>
+Tool calling is normalised across two protocols so the agent works regardless of
+what the serving stack supports: the native OpenAI <code>tools</code> /
+<code>tool_calls</code> fields, and Qwen's own text protocol in which the model
+emits <code>&lt;tool_call&gt;{...}&lt;/tool_call&gt;</code> inside the reply body,
+parsed out with a regular expression. A third fallback catches fenced
+<code>```json</code> blocks. If the endpoint is unreachable entirely and
+<code>QWEN_CHAT_ALLOW_LOCAL_FALLBACK</code> is enabled, the system falls back to
+running Qwen in <code>qwen_env</code> as a subprocess — fully offline, slow, and
+text-protocol only.
+</p>
+
+<h3>5.10 The <code>auto</code> cascade and its ordering</h3>
+<p class="small"><code>services/detection_runner.py</code></p>
+<p>
+<code>auto</code> is the recommended strategy for a user who does not know what
+to look for. It runs three backends in a fixed order and stops at the first
+positive detection.
+</p>
+<div class="figure">
+<pre>
+  auto
+   │
+   ├─ 1. GEMINI 2.0 FLASH ───────── incident found? ──► RETURN
+   │     best coverage; only path to harassment
+   │     skipped silently on missing key / quota / network error
+   │
+   ├─ 2. VIOLENCE CLASSIFIER ────── incident found? ──► RETURN
+   │     binary, high accuracy on fights and assault
+   │
+   ├─ 3. ACTION MODEL (UCF-Crime) ─ incident found? ──► RETURN
+   │     threshold raised to 0.85 — covers robbery, arson,
+   │     road accidents, shooting, the long tail
+   │
+   └─ nothing found ──► return the first "clear" verdict obtained
+</pre>
+<div class="cap">Figure 5.1 — The auto cascade. Every stage is individually optional; a failure is a skip, never an error.</div>
+</div>
+<h4>Why this order and not another</h4>
+<table>
+  <thead><tr><th style="width:8%">Rank</th><th style="width:24%">Backend</th><th>Justification for its position</th></tr></thead>
+  <tbody>
+    <tr><td>1st</td><td>Gemini 2.0 Flash</td>
+      <td>Widest category coverage and the only harassment detector, so putting it anywhere else means harassment is missed whenever an earlier stage fires. It is also fast in wall-clock terms and produces the richest output. Its only weakness — external availability — is precisely what the fallbacks exist for.</td></tr>
+    <tr><td>2nd</td><td>Violence classifier</td>
+      <td>Fights and assault are the most common real-world category, and this binary model is the most accurate available on exactly that category. It therefore gets the first look among the local models.</td></tr>
+    <tr><td>3rd</td><td>Action model @ 0.85</td>
+      <td>Broadest local class coverage (robbery, arson, road accidents, shooting) but the noisiest, so it runs last and only accepts high-confidence predictions. It exists to catch what the two above structurally cannot see.</td></tr>
+  </tbody>
+</table>
+<p>
+The cascade also maintains a "clear" result: if a stage runs successfully and
+finds nothing, that verdict is retained. If no stage detects anything, the
+retained clear verdict is returned rather than a synthetic empty one, so the
+report shows which model actually cleared the video.
+</p>
+<p>
+Finally, <code>model_code_from_result()</code> inspects the winning result and
+records the model that <em>actually produced</em> it on the <code>scans</code>
+row, while the <code>analysis_jobs</code> row keeps the model that was
+<em>requested</em>. For an <code>auto</code> run these genuinely differ, which is
+why the schema stores both and neither is redundant (see §8).
+</p>
+
+<h3>5.11 Alternatives considered and rejected</h3>
+<table>
+  <caption>Table 5.2 — Rejected approaches and the reasoning</caption>
+  <thead><tr><th style="width:28%">Alternative</th><th>Why it was not used</th></tr></thead>
+  <tbody>
+    <tr><td>Training a custom action model from scratch on UCF-Crime + RWF-2000</td>
+      <td>Weeks of GPU time, severe class imbalance on the rare and most important classes (killing, harassment), and an almost certain accuracy loss against a published fine-tuned checkpoint. The engineering effort was better spent on the pipeline, the cascade and the evidence layer — which is where this system's actual contribution lies.</td></tr>
+    <tr><td>A single end-to-end multi-task model</td>
+      <td>Would need to simultaneously produce pixel boxes, temporal segments and contextual judgements. No such model exists off the shelf, and building one would require exactly the annotated dataset the project does not have.</td></tr>
+    <tr><td>3D CNNs — I3D, SlowFast, C3D</td>
+      <td>The prior generation of video action recognition. VideoMAE's masked-autoencoder pre-training gives better accuracy with less fine-tuning data, and it integrates directly through <code>transformers</code> with no bespoke loading code.</td></tr>
+    <tr><td>Faster R-CNN / two-stage detectors</td>
+      <td>Roughly an order of magnitude slower than single-stage YOLO for no meaningful accuracy gain at the object sizes involved. Interactive latency was a hard requirement.</td></tr>
+    <tr><td>CLIP-based frame classification</td>
+      <td>Gives a whole-frame similarity score with no localisation and no temporal modelling — strictly worse than OWLv2 for the object task and useless for the action task.</td></tr>
+    <tr><td>GPT-4V / Claude for video</td>
+      <td>At the time of building, Gemini's native video input with the Files API and constrained JSON output was the cleanest fit. The abstraction in <code>detection_runner.py</code> means adding another vision-language backend is a single new function plus a registry entry.</td></tr>
+    <tr><td>Pose estimation (OpenPose / MediaPipe) with a fight heuristic</td>
+      <td>Brittle in crowds, in poor lighting and under occlusion — all defining characteristics of real CCTV footage. It also requires hand-written rules for what constitutes a fight, which is precisely what a learned model does better.</td></tr>
+  </tbody>
+</table>
+
+<h3>5.12 Inference post-processing</h3>
+<p>
+Raw model output is not shown to the user. Four post-processing stages sit
+between the model and the report.
+</p>
+<div class="grid2">
+  <div class="card">
+    <h5>Sliding-window merge</h5>
+    <p>Overlapping windows of the same label that touch are merged into one segment, and the merged span keeps the peak confidence and the peak timestamp. A ten-second fight becomes one incident, not five.</p>
+  </div>
+  <div class="card">
+    <h5>Category mapping</h5>
+    <p>Each model's native labels are mapped onto the five shared categories, so a UCF-Crime <code>Burglary</code>, a Gemini <code>theft</code> and a YOLO <code>Gun</code> all land in a schema the frontend can group and colour consistently.</p>
+  </div>
+  <div class="card">
+    <h5>Object-grounded explanation</h5>
+    <p>OWLv2 names the objects involved and composes a sentence — "A road accident involving a car and a motorcycle, with people present" — with the relative-dominance filter of §5.4 suppressing hallucinated objects.</p>
+  </div>
+  <div class="card">
+    <h5>Evidence extraction</h5>
+    <p>Each incident yields a cut video clip, a bounding-boxed version of that clip, and a still frame from its midpoint, all stored in MinIO and linked to the segment row.</p>
+  </div>
+</div>
+<h4>Frame-level captioning</h4>
+<p>
+Every sampled frame receives a caption, chosen from three sources in order of
+specificity: the incident whose time range contains the frame; otherwise the
+objects the detector boxed on that frame; otherwise an explicit
+<em>"Clear — nothing flagged at 0:14"</em>. Object captions are produced by a
+single SQL statement that assigns every detection box to the frame nearest it in
+time (an OWLv2 pass can emit several hundred boxes — one round-trip each would
+cost more than the detection did) and a second statement that aggregates them
+into readable text such as <code>"gun ×3 (91%)"</code>.
+</p>
+</section>
+
+<!-- ============================ 6 ============================ -->
+<section>
+<h2 class="sec">6. Asynchronous Analysis Pipeline</h2>
+<p class="small"><code>worker.py</code> — ARQ task <code>analyze_video</code></p>
+
+<h3>6.1 Stage-by-stage walkthrough</h3>
+<table>
+  <caption>Table 6.1 — Pipeline stages with their progress ranges</caption>
+  <thead><tr><th style="width:11%">Progress</th><th style="width:22%">Stage</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr><td>0–5 %</td><td><code>downloading</code></td>
+      <td>Fetch the video from MinIO to a temporary local file (models need a real path), probe duration, resolution and frame rate, write them back onto the <code>videos</code> row.</td></tr>
+    <tr><td>5–30 %</td><td><code>extracting_frames</code></td>
+      <td>Sample N frames evenly, upload each JPEG to MinIO, insert an <code>images</code> row, and emit a <code>frame.ready</code> event carrying a ready-to-render presigned URL. This happens <em>before</em> any model loads.</td></tr>
+    <tr><td>30–70 %</td><td><code>detecting</code></td>
+      <td>Run the selected backend, or the <code>auto</code> cascade. Inference is dispatched with <code>asyncio.to_thread</code> so the worker's event loop stays responsive and can keep publishing progress while a model runs.</td></tr>
+    <tr><td>70 %</td><td><code>saving</code></td>
+      <td>Persist the result into the normalized tables: <code>scans</code>, <code>segments</code>, <code>detections</code>, <code>scan_labels</code>, interning any new label names.</td></tr>
+    <tr><td>70–90 %</td><td><code>clipping</code></td>
+      <td>Per incident: compose the OWLv2 explanation, cut the clip, produce a boxed version, capture a midpoint still, and emit <code>segment.ready</code>.</td></tr>
+    <tr><td>90–100 %</td><td><code>captioning</code></td>
+      <td>Link every detection box to its nearest frame, caption every frame, mark the job <code>SUCCEEDED</code>, invalidate the user's cache, emit <code>job.completed</code>.</td></tr>
+  </tbody>
+</table>
+
+<h3>6.2 Why frames are extracted first</h3>
+<p>
+Ordering the pipeline this way is a perceived-performance decision, and it is
+measurable. Decoding a dozen frames takes under a second; a vision model takes
+anywhere from five seconds to several minutes. By sampling, uploading and
+announcing frames <em>before</em> the model is loaded, the browser paints real
+imagery from the user's own video almost immediately, instead of showing a
+spinner for the entire run.
+</p>
+<div class="figure">
+<pre>
+ 0.0s  job.queued
+ 0.0s  job.started
+ 1.0s  frame.ready     7%    ← first real image on screen
+ 2.1s  frame.ready    30%    ← all 12 frames on screen
+ 2.2s  job.progress   40%    ← YOLO begins loading
+ 7.6s  job.completed 100%
+</pre>
+<div class="cap">Figure 6.1 — Measured event timeline for <code>weapon_gun.mp4</code> with the YOLO backend. First content at 1.0 s rather than 7.6 s.</div>
+</div>
+
+<h3>6.3 Failure handling and retries</h3>
+<ul>
+  <li>Every relational field is read once, up front. Prisma's <code>update()</code> returns a record with relations unset, so anything reached through <code>job.video</code> after the first status write would silently be <code>None</code> — a subtle bug the code guards against explicitly.</li>
+  <li>Optional steps are individually wrapped: a failed clip extraction, a failed box annotation or a failed explanation logs and continues. None of them can fail the analysis.</li>
+  <li>A genuine failure sets <code>status = FAILED</code>, records the error message on the job row, invalidates the cache and emits <code>job.failed</code> before re-raising for ARQ.</li>
+  <li>The temporary video file is removed in a <code>finally</code> block regardless of outcome.</li>
+  <li>Worker limits: <code>max_jobs = 2</code> (two concurrent jobs is the ceiling for memory-hungry vision models on a single GPU), a 1800-second job timeout, and two attempts per job.</li>
+  <li><code>POST /detection/jobs/{id}/retry</code> re-queues a failed job against the already-stored video, so the user does not re-upload.</li>
+</ul>
+</section>
+
+<!-- ============================ 7 ============================ -->
+<section>
+<h2 class="sec">7. Real-Time Event System</h2>
+
+<h3>7.1 The event log as single source of truth</h3>
+<p>
+Every meaningful occurrence during a job becomes one append-only row in
+<code>job_events</code>. That row — not the worker's local state — is the single
+source of truth, and it feeds both delivery channels.
+</p>
+<div class="figure">
+<pre>
+  worker ──► job_events (Postgres, append-only, numbered per job)
+                   │
+      ┌────────────┴─────────────┐
+      ▼                          ▼
+  Redis pub/sub              webhook dispatcher
+      │                          │
+  SSE stream                 signed HTTP POST
+      ▼                          ▼
+   browser                  subscriber's server
+</pre>
+<div class="cap">Figure 7.1 — One log, two transports. Payloads are byte-identical; only the delivery mechanism differs.</div>
+</div>
+<p>
+A browser cannot receive an inbound HTTP callback, which is the only reason two
+transports exist. Because both are built from the same row by the same
+<code>build_payload()</code> function, a webhook consumer and the user interface
+can never disagree about what happened.
+</p>
+<p>
+Seven event types are defined: <code>job.queued</code>, <code>job.started</code>,
+<code>job.progress</code>, <code>frame.ready</code>, <code>segment.ready</code>,
+<code>job.completed</code>, <code>job.failed</code>. The last two are terminal —
+the SSE stream closes after either.
+</p>
+
+<h3>7.2 Server-Sent Events</h3>
+<p>
+Events are numbered with a monotonic per-job <code>sequence</code>, sent as the
+SSE <code>id:</code> field. When a connection drops, the browser automatically
+resends the last identifier as <code>Last-Event-ID</code>, and the server replays
+only what came after it. Two details make this correct rather than merely
+plausible:
+</p>
+<ul>
+  <li>The Redis subscription is opened <strong>before</strong> history is replayed from Postgres. Opening it afterwards would leave a window in which an event published between the two is lost forever.</li>
+  <li><code>UNIQUE (job_id, sequence)</code> at the database level guarantees the numbering has no gaps and no duplicates, which is what makes the replay exact.</li>
+</ul>
+<p>
+<code>frame.ready</code> carries the image record complete with a presigned URL,
+so the browser renders the thumbnail directly from the event with no follow-up
+request. <code>segment.ready</code> carries the incident along with its cut clip
+and boxed clip.
+</p>
+
+<h3>7.3 Signed webhooks</h3>
+<p>
+Users register endpoint URLs and subscribe to a subset of event types. The
+signing secret is returned exactly once, at creation. Each delivery carries four
+headers:
+</p>
+<pre>
+X-Vision-Event:      frame.ready
+X-Vision-Delivery:   1421
+X-Vision-Attempt:    1
+X-Vision-Signature:  t=1786...,v1=9f2c...
+</pre>
+<p>
+The signature is <code>HMAC-SHA256(secret, "{timestamp}.{raw_body}")</code>.
+Because the timestamp is <em>inside</em> the signed string, a captured request
+cannot be replayed later — a receiver rejecting timestamps older than its
+tolerance window is cryptographically safe. Verification must run over the
+<strong>raw</strong> body; re-serialising the JSON changes the bytes and
+invalidates the signature. Failed deliveries retry with exponential backoff
+(2 s, 8 s, 30 s, 120 s) up to a configurable attempt limit, and each attempt is
+recorded as a <code>webhook_deliveries</code> row with its status code, duration
+and error. The body itself is never stored — it is rebuilt from the referenced
+<code>job_event</code>, so there is no second copy to drift out of sync.
+</p>
+</section>
+
+<!-- ============================ 8 ============================ -->
+<section>
+<h2 class="sec">8. Database Design (Third Normal Form)</h2>
+<p class="small"><code>prisma/schema.prisma</code> · full justification in <code>docs/NORMALIZATION.md</code></p>
+
+<h3>8.1 The original schema and its defects</h3>
+<p>
+The first implementation stored an entire analysis in one row of a
+<code>detection_scans</code> table, with a <code>labels TEXT[]</code> column and
+a <code>result JSONB</code> blob. It worked, and it was wrong in four specific,
+diagnosable ways.
+</p>
+<table>
+  <caption>Table 8.1 — Normalization defects in the original design</caption>
+  <thead><tr><th style="width:24%">Defect</th><th style="width:18%">Where</th><th style="width:10%">Breaks</th><th>Consequence</th></tr></thead>
+  <tbody>
+    <tr><td>Repeating group in a column</td><td><code>labels TEXT[]</code></td><td>1NF</td>
+      <td>"Every scan tagged <code>Gun</code>" requires <code>unnest()</code> or an array scan; no index helps, and a mistyped label can never be corrected in one place.</td></tr>
+    <tr><td>Nested relations in a blob</td><td><code>result JSONB</code></td><td>1NF</td>
+      <td>Segments and object boxes are entities with their own attributes. Buried in JSON they cannot be constrained, indexed, joined or aggregated.</td></tr>
+    <tr><td>Derived data stored</td><td><code>result-&gt;'label_counts'</code></td><td>3NF</td>
+      <td>It is a <code>COUNT(*) GROUP BY label</code> over detections in the same blob. Two copies of one fact inevitably drift apart.</td></tr>
+    <tr><td>Free-text foreign keys</td><td><code>model TEXT</code></td><td>3NF</td>
+      <td>Renaming a model, or recording that it runs locally, means an <code>UPDATE</code> across every historical row — a textbook update anomaly.</td></tr>
+  </tbody>
+</table>
+
+<h3>8.2 The normalized design</h3>
+<div class="figure">
+<pre>
+users
+  └── videos                        (user_id)
+        ├── analysis_jobs           (video_id, model_id) ── job_queries
+        │     └── scans             (job_id, model_id)
+        │           ├── segments    (scan_id, label_id, category_id)
+        │           ├── detections  (scan_id, label_id, image_id)
+        │           ├── scan_labels (scan_id, label_id)              M:N
+        │           └── chat_sessions └── chat_messages └── chat_citations
+        └── images                  (video_id, segment_id)
+
+detection_models · incident_categories · labels                lookup tables
+job_events → webhook_deliveries → webhook_endpoints ── webhook_subscriptions
+</pre>
+<div class="cap">Figure 8.1 — Entity relationships. 27 tables, no array columns and no JSON columns in the operational schema.</div>
+</div>
+
+<h4>Key design decisions</h4>
+<ul>
+  <li>
+    <strong>Ownership is stored exactly once and reached by traversal.</strong>
+    <code>analysis_jobs</code> has deliberately no <code>user_id</code> — the
+    owner is <code>job → video → user</code>. Copying it onto the job would make
+    <code>user_id</code> transitively dependent on <code>video_id</code>, which is
+    precisely the 3NF violation the schema exists to avoid. The same reasoning
+    removes <code>user_id</code> from <code>scans</code>, <code>segments</code>
+    and frame <code>images</code>.
+  </li>
+  <li>
+    <strong>Lookup tables for open-ended sets.</strong>
+    <code>detection_models</code>, <code>incident_categories</code> and
+    <code>labels</code> store each name once and are referenced by id. Labels
+    arrive from models as free text ("Fighting", "a gun") and are interned on
+    write, which is what allows <code>scan_labels</code> to be a proper M:N join.
+  </li>
+  <li>
+    <strong>Requested versus produced model.</strong> <code>analysis_jobs.model_id</code>
+    is what the user asked for; <code>scans.model_id</code> is what actually
+    generated the result. For an <code>auto</code> run these genuinely differ, so
+    neither is redundant.
+  </li>
+  <li>
+    <strong>Lists become rows.</strong> OWLv2's free-text query list is
+    <code>job_queries</code>, ordered by <code>ordinal</code>. A webhook
+    endpoint's subscribed events are <code>webhook_subscriptions</code>, not an
+    <code>events TEXT[]</code> column.
+  </li>
+  <li>
+    <strong>Coordinates are atomic.</strong> <code>box_xyxy: [x1,y1,x2,y2]</code>
+    became four numeric columns — a coordinate pair is not an atomic value.
+  </li>
+  <li>
+    <strong>Derived aggregates are computed, never stored.</strong>
+    <code>label_counts</code> is gone; it is a <code>GROUP BY</code> over
+    <code>detections</code>, computed on read.
+  </li>
+  <li>
+    <strong>A database constraint enforces single-source ownership</strong> on
+    the shared <code>images</code> table:
+    <code>CHECK ((user_id IS NULL) &lt;&gt; (video_id IS NULL))</code>. An
+    <code>UPLOAD</code> has a user and no video; a <code>FRAME</code> has a video
+    (whose owner is the user) and no user. The two can therefore never disagree.
+    Prisma cannot express a <code>CHECK</code>, so the migration script applies it.
+  </li>
+  <li>
+    <strong>Deduplication by content.</strong> <code>UNIQUE (user_id, checksum_sha256)</code>
+    on <code>videos</code> makes re-uploading the same bytes a lookup rather than
+    a second copy and a second analysis run.
+  </li>
+</ul>
+
+<h3>8.3 Documented exceptions</h3>
+<p>
+Two deliberate choices are recorded so they are not mistaken for oversights.
+</p>
+<ol>
+  <li>
+    <strong>Enums live in the type system, not in lookup tables.</strong>
+    <code>JobStatus</code>, <code>ImageKind</code>, <code>ChatRole</code> and
+    <code>DeliveryStatus</code> are closed sets that carry no attributes beyond a
+    name. A lookup table would add a join for zero benefit. Open-ended sets that
+    <em>do</em> carry attributes and change at runtime — labels, models,
+    categories — get real tables.
+  </li>
+  <li>
+    <strong><code>scans.summary</code> is not derivable.</strong> It might look
+    like a function of the segments, but the vision models write a
+    natural-language summary that no query over <code>segments</code> could
+    reconstruct. It is a genuine attribute of the scan.
+  </li>
+</ol>
+<p>
+A migration script, <code>migrate_normalize.py</code>, backfills the legacy table
+into the new structure, fanning each old row out into <code>videos</code> +
+<code>analysis_jobs</code> + <code>scans</code> + <code>segments</code> /
+<code>detections</code> + <code>scan_labels</code>. On the development database it
+moved 30 legacy rows into 24 segments, 803 object detections, 16 interned labels
+and 74 scan-label links. It supports <code>--dry-run</code> and is safe to re-run.
+</p>
+</section>
+
+<!-- ============================ 9 ============================ -->
+<section>
+<h2 class="sec">9. Conversational AI Layer</h2>
+<p>
+Three distinct agents serve three distinct purposes. Keeping them separate — with
+different models, different prompts and different privileges — is what makes each
+one reliable.
+</p>
+
+<h3>9.1 Agent A — tool-using orchestrator</h3>
+<p class="small"><code>services/chat_agent.py</code> + <code>services/agent_tools.py</code> · driven by Qwen2.5-7B · route <code>/chat</code></p>
+<p>
+"SentinelAI" is the general-purpose assistant. A conversation owns its own
+uploaded video and may produce several scans. Qwen decides when to reach for a
+tool; six are exposed:
+</p>
+<table>
+  <thead><tr><th style="width:32%">Tool</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>analyze_video</code></td><td>Runs a chosen detection backend over the session's video and persists the scan. The tool schema describes each backend in prose so the model picks sensibly; YOLO is the default, <code>auto</code> for thorough behavioural coverage.</td></tr>
+    <tr><td><code>query_detection_database</code></td><td>Hands a plain-English question to Agent C (§9.3).</td></tr>
+    <tr><td><code>control_video_playback</code></td><td>Drives the browser's player — play, pause, replay, seek, play_segment. No server-side effect; the executor validates and the frontend carries it out.</td></tr>
+    <tr><td><code>show_frame_at</code></td><td>Captures the exact still at one second and displays it inline in the conversation.</td></tr>
+    <tr><td><code>list_recent_scans</code> / <code>get_scan_report</code></td><td>Read stored history and full reports.</td></tr>
+  </tbody>
+</table>
+<p>
+The system prompt enforces operator-appropriate behaviour: lead with the verdict
+then the evidence; <em>show</em> rather than describe (any request to "play that
+again" is a playback call, not a sentence about one); report <em>when and where</em>
+together using the frame location the tool returned ("the gun appears at 00:02,
+centre of frame") and never guess a location the tool did not supply; never
+invent a detection, timestamp or count. Tool rounds are capped at four per user
+message to prevent loops, and history is replayed as plain turns with session
+facts injected into the system prompt — keeping replays small and preventing
+tool-id desynchronisation.
+</p>
+
+<h3>9.2 Agent B — grounded per-scan analyst</h3>
+<p class="small"><code>services/scan_chat.py</code> · Gemini 2.0 Flash · route <code>/detection/scans/{id}/chat</code></p>
+<p>
+Every finished scan gets its own read-only conversation. This agent answers
+questions about that one video and nothing else. Grounding is enforced in three
+independent ways:
+</p>
+<ol>
+  <li><strong>Instruction.</strong> The system prompt forbids claims unsupported by the supplied evidence and requires the phrase "the analysis does not show that" when an answer is not in the data.</li>
+  <li><strong>Structured citation.</strong> The model returns JSON naming the segment ordinals and frame sequences it used. These are written to <code>chat_citations</code> and rendered beneath the reply, so any claim traces back to evidence.</li>
+  <li><strong>Actual images.</strong> Frames are attached to the prompt as real image data, so a question about the scene — "what is the person on the left carrying?" — is answered by <em>looking</em>, not by inferring from a caption.</li>
+</ol>
+<p>
+Three backends are tried in order: Gemini (multimodal), the local Qwen server
+(text-only), then a plain readout of the stored analysis. The response carries a
+<code>source</code> field, and the interface visibly labels a fallback reply
+rather than passing it off as reasoning — an honesty property that matters when
+the answer quality differs by an order of magnitude between tiers.
+</p>
+
+<h3>9.3 Agent C — text-to-SQL insights</h3>
+<p class="small"><code>services/db_agent.py</code> · Qwen2.5-7B</p>
+<p>
+Questions about counts, trends and comparisons across past videos are delegated
+to a database analyst agent. It asks Qwen to write a read-only
+<code>SELECT</code>, validates it, executes it, and asks Qwen to turn the rows
+into a short insight.
+</p>
+<div class="callout">
+  <span class="lbl">The containment model — four independent layers</span>
+  <strong>1. The model never sees real tables.</strong> The generated query runs
+  on top of a fixed CTE prelude exposing exactly three relations —
+  <code>scans</code>, <code>frames</code>, <code>events</code> — every branch of
+  which is filtered by <code>user_id = $1</code>. Cross-tenant access is
+  structurally impossible, not merely forbidden.<br>
+  <strong>2. Relation allowlist.</strong> Every <code>FROM</code> and
+  <code>JOIN</code> target is extracted and checked against the permitted set;
+  anything else is rejected before execution.<br>
+  <strong>3. Keyword denylist.</strong> A regular expression rejects every
+  mutating or escalating construct — <code>INSERT</code>, <code>UPDATE</code>,
+  <code>DELETE</code>, <code>DROP</code>, <code>GRANT</code>, <code>COPY</code>,
+  <code>pg_read_file</code>, <code>pg_sleep</code>, <code>information_schema</code>,
+  <code>pg_catalog</code> — and also names the sensitive tables (<code>users</code>,
+  <code>images</code>, the chat tables) explicitly. SQL comments are stripped
+  first so they cannot be used to smuggle a keyword past the check.<br>
+  <strong>4. Row cap.</strong> Every query is limited to 200 rows, with 40 fed
+  back to the model for summarisation.
+</div>
+</section>
+
+<!-- ============================ 10 ============================ -->
+<section>
+<h2 class="sec">10. REST API Reference</h2>
+<p class="small">48 endpoints across 9 routers. Interactive documentation is generated automatically at <code>/docs</code> (Swagger UI) and <code>/redoc</code>.</p>
+
+<h3>10.1 Authentication</h3>
+<table>
+  <thead><tr><th style="width:10%">Method</th><th style="width:30%">Path</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>POST</td><td><code>/auth/signup</code></td><td>Register; sends an email OTP. Login is blocked until verified.</td></tr>
+    <tr><td>POST</td><td><code>/auth/verify-otp</code></td><td>Verify the OTP and receive a JWT (auto-login).</td></tr>
+    <tr><td>POST</td><td><code>/auth/resend-otp</code></td><td>Re-issue an expired OTP.</td></tr>
+    <tr><td>POST</td><td><code>/auth/login</code></td><td>OAuth2 password flow; returns a bearer token.</td></tr>
+    <tr><td>GET</td><td><code>/auth/me</code> · <code>/users/me</code></td><td>Current user profile.</td></tr>
+    <tr><td>POST</td><td><code>/auth/forgot-password</code> · <code>/auth/reset-password</code></td><td>OTP-based password reset.</td></tr>
+  </tbody>
+</table>
+
+<h3>10.2 Detection and jobs</h3>
+<table>
+  <thead><tr><th style="width:10%">Method</th><th style="width:34%">Path</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>POST</td><td><code>/detection/jobs</code></td><td><strong>Primary path.</strong> Upload and queue; returns <code>202</code> with a job id in ≈ 1 s.</td></tr>
+    <tr><td>GET</td><td><code>/detection/jobs/{id}/events</code></td><td>SSE progress stream with <code>Last-Event-ID</code> replay.</td></tr>
+    <tr><td>GET</td><td><code>/detection/jobs/{id}</code></td><td>Status snapshot plus every frame so far (polling fallback).</td></tr>
+    <tr><td>GET</td><td><code>/detection/jobs/{id}/frames</code></td><td>All stored frames with captions.</td></tr>
+    <tr><td>GET</td><td><code>/detection/jobs</code></td><td>Recent jobs for the user.</td></tr>
+    <tr><td>POST</td><td><code>/detection/jobs/{id}/retry</code></td><td>Re-queue a failed job against the stored video.</td></tr>
+    <tr><td>POST</td><td><code>/detection/video</code></td><td>Synchronous YOLO / OWLv2 detection.</td></tr>
+    <tr><td>POST</td><td><code>/detection/video/llm</code> · <code>/qwen</code> · <code>/action</code> · <code>/auto</code></td><td>Synchronous single-backend endpoints.</td></tr>
+    <tr><td>GET</td><td><code>/detection/stats</code> · <code>/history</code> · <code>/scan/{id}</code></td><td>Dashboard statistics, scan history, full report.</td></tr>
+  </tbody>
+</table>
+
+<h3>10.3 Chat, admin and webhooks</h3>
+<table>
+  <thead><tr><th style="width:10%">Method</th><th style="width:34%">Path</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>GET / POST</td><td><code>/detection/scans/{id}/chat[/messages]</code></td><td>Grounded per-scan conversation (Agent B) with tailored openers.</td></tr>
+    <tr><td>POST / GET</td><td><code>/chat/sessions[...]</code></td><td>Orchestrator agent (Agent A): create sessions, attach a video, analyse, converse.</td></tr>
+    <tr><td>POST / GET</td><td><code>/images/upload</code> · <code>/images</code> · <code>/images/{id}</code></td><td>Direct still-image upload and retrieval.</td></tr>
+    <tr><td>GET</td><td><code>/admin/stats</code> · <code>/users</code> · <code>/scans</code> · <code>/analytics</code></td><td>Admin dashboard data.</td></tr>
+    <tr><td>DELETE</td><td><code>/admin/user/{id}</code> · <code>/admin/scan/{id}</code></td><td>Administrative removal.</td></tr>
+    <tr><td>POST / GET</td><td><code>/webhooks/endpoints</code> · <code>/deliveries</code> · <code>/events</code></td><td>Register endpoints (secret returned once), inspect delivery attempts.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============================ 11 ============================ -->
+<section>
+<h2 class="sec">11. Frontend Application</h2>
+
+<h3>11.1 Route structure</h3>
+<p>
+Next.js route groups cleanly separate the two halves of the application, each
+with its own layout — <code>(auth)</code> renders a centred card on a plain
+background, <code>(app)</code> renders the authenticated shell with navigation.
+</p>
+<table>
+  <thead><tr><th style="width:30%">Route</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>/</code></td><td>Landing page.</td></tr>
+    <tr><td><code>(auth)/login</code>, <code>/signup</code>, <code>/verify</code></td><td>Credentials and OTP verification.</td></tr>
+    <tr><td><code>(auth)/forgot-password</code>, <code>/reset-password</code></td><td>Password recovery.</td></tr>
+    <tr><td><code>(app)/dashboard</code></td><td>Statistics and recent scans.</td></tr>
+    <tr><td><code>(app)/analyze</code></td><td>Upload, model selection, and the live analysis view driven by SSE.</td></tr>
+    <tr><td><code>(app)/results</code></td><td>Scan history.</td></tr>
+    <tr><td><code>(app)/report/[id]</code></td><td>Full report: incident timeline, clips, boxed frames, per-frame captions, and the grounded scan chat panel.</td></tr>
+    <tr><td><code>(app)/chat</code></td><td>The orchestrator agent with an attached video player the agent can drive.</td></tr>
+    <tr><td><code>(app)/admin</code></td><td>Platform analytics with ApexCharts.</td></tr>
+  </tbody>
+</table>
+
+<h3>11.2 State management and live analysis</h3>
+<p>
+Three Zustand stores hold auth, chat and active-scan state, with the JWT
+persisted to <code>localStorage</code> and attached by an Axios interceptor.
+Typed API clients in <code>src/lib/</code> — <code>auth</code>,
+<code>detection</code>, <code>jobs</code>, <code>chat</code>,
+<code>scan-chat</code>, <code>admin</code> — mirror the backend's Pydantic
+schemas one for one.
+</p>
+<p>
+The <code>live-analysis</code> component is where the event system becomes
+visible: it subscribes to the SSE stream, appends each frame thumbnail as its
+<code>frame.ready</code> event arrives, animates the progress bar from
+<code>job.progress</code>, and inserts each incident card as
+<code>segment.ready</code> lands. On disconnect it reconnects with
+<code>Last-Event-ID</code> and continues without gaps or duplicates. In the chat
+view, <code>video-panel</code> executes the playback commands the agent issues,
+so "show me the moment the weapon appears" physically seeks the player.
+</p>
+</section>
+
+<!-- ============================ 12 ============================ -->
+<section>
+<h2 class="sec">12. Security Model</h2>
+
+<h3>12.1 Authentication and authorisation</h3>
+<ul>
+  <li><strong>Password storage.</strong> bcrypt with per-password salt generation. Inputs are truncated to bcrypt's 72-byte limit identically on the hash and verify paths — an asymmetry here is a classic silent authentication bug.</li>
+  <li><strong>Tokens.</strong> HS256 JWTs with a configurable expiry, issued through the OAuth2 password flow and validated by a FastAPI dependency that decodes the token and loads the user on every protected request.</li>
+  <li><strong>Email verification.</strong> Signup issues a time-limited OTP; login is refused until the account is verified. The same mechanism backs password reset.</li>
+  <li><strong>Ownership checks.</strong> Because ownership is reached by traversal rather than duplicated, every access check follows the same path — <code>scan → job → video → user</code> — and there is no second copy of <code>user_id</code> that could be checked inconsistently.</li>
+  <li><strong>CORS.</strong> Allowed origins are an explicit configured list, not a wildcard.</li>
+</ul>
+
+<h3>12.2 Upload validation and storage</h3>
+<ul>
+  <li>File type, MIME type and size are validated before any byte reaches storage; the video path enforces a 200 MB ceiling.</li>
+  <li>Stored filenames are generated, never taken from user input — closing the path-traversal and collision classes at once.</li>
+  <li>Binary data lives only in MinIO. The browser receives presigned URLs with a bounded lifetime (default one hour), so object keys are never publicly enumerable.</li>
+  <li>Webhook secrets are shown exactly once, at endpoint creation.</li>
+</ul>
+
+<h3>12.3 SQL agent containment</h3>
+<p>
+The text-to-SQL agent is the highest-risk surface in the system — a language
+model writing queries against a live database. Its four-layer containment is
+described in §9.3. The essential property is that the innermost layer is
+<em>structural</em>: the model can only reference three CTEs, each already
+filtered to the calling user, so even a query that defeats every validator cannot
+read another user's data.
+</p>
+<div class="callout warn">
+  <span class="lbl">Known gaps, stated plainly</span>
+  There is no rate limiting on authentication endpoints, no refresh-token
+  rotation (tokens simply expire), and no audit log of administrative actions.
+  Admin identity is determined by matching a configured email address rather than
+  by a role column. These are appropriate for the current scope and are listed in
+  §16 as the first items for production hardening.
+</div>
+</section>
+
+<!-- ============================ 13 ============================ -->
+<section>
+<h2 class="sec">13. Performance &amp; Caching</h2>
+
+<h3>13.1 Cache design</h3>
+<p>
+Dashboard statistics, scan history and finished reports are cached in Redis under
+a per-user namespace:
+</p>
+<pre>v1:{user_generation}:{namespace}:{user_id}:{suffix}</pre>
+<p>
+Invalidation bumps the user's generation counter with a single <code>INCR</code>,
+which logically expires every key belonging to that user without scanning the
+keyspace — an <code>O(1)</code> operation regardless of how many entries exist.
+The worker performs this bump when a job finishes.
+</p>
+<div class="callout">
+  <span class="lbl">A subtle correctness constraint</span>
+  Cached report payloads embed presigned URLs. Their cache TTL (120 s) is
+  therefore deliberately set far below the signature lifetime (3600 s). If the
+  ordering were reversed, a cache hit could hand the browser a URL that had
+  already expired — a bug that would be intermittent, environment-dependent and
+  extremely unpleasant to diagnose.
+</div>
+
+<h3>13.2 Other performance measures</h3>
+<ul>
+  <li><strong>Models are loaded once</strong> and cached in module globals. The first request pays the load cost; every subsequent request reuses the resident model.</li>
+  <li><strong>Blocking inference is offloaded</strong> with <code>asyncio.to_thread</code>, keeping the worker's event loop free to publish progress events while a model runs.</li>
+  <li><strong>Bulk SQL over per-row round-trips.</strong> Linking several hundred detection boxes to their nearest frames is two statements, not several hundred — the round-trips would have cost more than the detection itself.</li>
+  <li><strong>Reference-table ids are memoised in-process.</strong> Lookup rows never change at runtime, so caching their ids removes a join from every write in the worker's hot loop.</li>
+  <li><strong>Content-addressed deduplication.</strong> A SHA-256 checksum means re-uploading the same video is a lookup, not a second full analysis.</li>
+  <li><strong>Database indexes</strong> on every foreign key and on the query patterns that matter: <code>(user_id, uploaded_at)</code>, <code>(status, queued_at)</code>, <code>(scan_id, start_time)</code>, <code>(video_id, sequence)</code>.</li>
+  <li><strong>GPU acceleration</strong> is automatic when a CUDA build of torch is present, with a transparent CPU fallback.</li>
+</ul>
+</section>
+
+<!-- ============================ 14 ============================ -->
+<section>
+<h2 class="sec">14. Deployment &amp; Operations</h2>
+
+<h3>14.1 Bringing the system up</h3>
+<pre>
+# 1 — backing services: Postgres (5434), Redis (6379), MinIO (9000/9001)
+docker compose up -d
+
+# 2 — database schema
+env\Scripts\python.exe -m prisma db push
+env\Scripts\python.exe -m prisma generate
+
+# 3 — API                        (terminal 1)
+env\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000
+
+# 4 — analysis worker            (terminal 2)  ← without this, jobs stay QUEUED
+env\Scripts\python.exe -m arq worker.WorkerSettings
+
+# 5 — frontend                   (terminal 3)
+cd frontend && npm run dev
+</pre>
+
+<h3>14.2 Startup sequence</h3>
+<p>
+The FastAPI lifespan handler performs an ordered, individually fault-tolerant
+startup: connect Prisma; create the agent chat tables if absent; seed reference
+data (models, categories, webhook event types — idempotent, so it runs on every
+boot); connect Redis and the ARQ pool, warning rather than failing if either is
+unavailable; ensure the admin user exists; initialise both MinIO buckets. Every
+step is individually wrapped, so a missing optional service degrades that feature
+rather than preventing boot.
+</p>
+
+<h3>14.3 Operational notes</h3>
+<ul>
+  <li>Two Python environments exist and must not be confused: <code>env</code> is the backend, <code>qwen_env</code> holds only the local Qwen vision model with its conflicting dependencies.</li>
+  <li>Verify GPU availability with <code>python -c "import torch; print(torch.cuda.is_available())"</code>. A <code>+cpu</code> build means pip installed the CPU-only wheel by default and everything will run slowly.</li>
+  <li>Postgres is on host port 5434 because 5432 and 5433 are held by native Windows PostgreSQL services on the development machine.</li>
+  <li>Data persists in Docker named volumes. <code>docker compose down</code> keeps it; <code>down -v</code> destroys it.</li>
+  <li>The API must be started with <code>--reload</code> during development, or newly added routes return 404 against a stale process.</li>
+</ul>
+</section>
+
+<!-- ============================ 15 ============================ -->
+<section>
+<h2 class="sec">15. Testing Strategy</h2>
+<p>
+The test suite comprises 21 modules and combines conventional integration testing
+with <strong>property-based testing</strong> using Hypothesis — an unusual and
+valuable choice for a project of this kind. Rather than asserting on
+hand-picked examples, property tests state invariants that must hold for
+<em>every</em> generated input, and Hypothesis actively searches for
+counterexamples and shrinks them to a minimal failing case.
+</p>
+<table>
+  <caption>Table 15.1 — Test coverage by area</caption>
+  <thead><tr><th style="width:30%">Area</th><th style="width:22%">Style</th><th>Invariants and behaviours verified</th></tr></thead>
+  <tbody>
+    <tr><td>Password hashing</td><td>Property</td><td>A hash always verifies against its own input; distinct passwords never collide; salting makes two hashes of the same password differ.</td></tr>
+    <tr><td>JWT handling</td><td>Property</td><td>Encode/decode round-trips preserve the subject; expired and tampered tokens are always rejected.</td></tr>
+    <tr><td>Email validation</td><td>Property</td><td>Accepted and rejected forms across a wide generated input space.</td></tr>
+    <tr><td>File validation</td><td>Property</td><td>Type, MIME and size rules hold for arbitrary generated uploads.</td></tr>
+    <tr><td>Filename generation</td><td>Property</td><td>Generated names are always unique and always safe — no traversal, no collision.</td></tr>
+    <tr><td>Configuration</td><td>Property</td><td>Required settings fail loudly when absent; defaults apply correctly.</td></tr>
+    <tr><td>Auth middleware</td><td>Property</td><td>Protected routes are unreachable without a valid token, for every generated token shape.</td></tr>
+    <tr><td>Sensitive-data exclusion</td><td>Property</td><td>No response schema can ever serialise a password hash.</td></tr>
+    <tr><td>Registration, login, profile</td><td>Property</td><td>Full auth flows over generated credentials.</td></tr>
+    <tr><td>Image upload and retrieval</td><td>Property</td><td>Ownership isolation — a user can never retrieve another user's image.</td></tr>
+    <tr><td>Error handling</td><td>Integration</td><td>Correct status codes and message shapes across the API and the image endpoints.</td></tr>
+    <tr><td>End-to-end flows</td><td>Integration</td><td>Signup → verify → login → upload → retrieve.</td></tr>
+    <tr><td>API documentation</td><td>Integration</td><td>The OpenAPI schema and the docs endpoints stay valid and complete.</td></tr>
+    <tr><td>Weapon detection</td><td>Functional</td><td><code>test_weapon.py</code> against the bundled sample clips.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ============================ 16 ============================ -->
+<section>
+<h2 class="sec">16. Limitations &amp; Future Work</h2>
+
+<h3>16.1 Honest limitations</h3>
+<table>
+  <thead><tr><th style="width:32%">Limitation</th><th>Detail and current mitigation</th></tr></thead>
+  <tbody>
+    <tr><td>Action-model class confusion</td>
+      <td>The UCF-Crime classifier reliably distinguishes violence from normality but confuses Abuse, Assault and Fighting with one another. Mitigated by presenting all three as "Fighting / Assault" rather than displaying a confidently wrong sub-label.</td></tr>
+    <tr><td>Harassment depends on a cloud model</td>
+      <td>Without a Gemini key, harassment detection is unavailable. There is no local substitute because no off-the-shelf harassment classifier exists. Qwen2.5-VL is the nearest offline option and is markedly slower.</td></tr>
+    <tr><td>No quantitative evaluation on a held-out set</td>
+      <td>The project integrates published checkpoints and validates behaviour on sample clips, but does not report precision/recall against an annotated test set of its own. This is the single largest gap between the current state and a research-grade claim.</td></tr>
+    <tr><td>Fixed sampling density</td>
+      <td>The object detectors sample a fixed number of frames regardless of video length, so a very brief weapon appearance in a long video can fall between samples.</td></tr>
+    <tr><td>Local VLM latency</td>
+      <td>Qwen2.5-VL on CPU takes minutes; the timeout is set to 1800 s. Practical only as an offline fallback, not as an interactive default.</td></tr>
+    <tr><td>Worker concurrency ceiling</td>
+      <td><code>max_jobs = 2</code> is set by single-GPU memory. Scaling requires moving the models to a dedicated inference host.</td></tr>
+    <tr><td>Privacy of cloud analysis</td>
+      <td>Choosing the Gemini backend sends footage to an external service — a genuine consideration for surveillance material, and the reason the offline path exists.</td></tr>
+  </tbody>
+</table>
+
+<h3>16.2 Future work, in priority order</h3>
+<ol>
+  <li><strong>Quantitative evaluation.</strong> Assemble an annotated held-out set and report per-class precision, recall, F1 and a confusion matrix for every backend; use the results to set per-class confidence thresholds empirically rather than by observation.</li>
+  <li><strong>Fine-tune the action model on the project's own label set</strong>, combining UCF-Crime with RWF-2000 and Real-Life-Violence-Situations, with explicit handling of class imbalance on the rare categories. This directly targets the Abuse/Assault/Fighting confusion.</li>
+  <li><strong>Result fusion instead of first-hit cascade.</strong> Run detectors in parallel and combine their outputs with confidence weighting, so an object detection and an action detection at the same timestamp reinforce one another rather than one short-circuiting the other.</li>
+  <li><strong>Production security hardening.</strong> Rate limiting on auth endpoints, refresh-token rotation, a proper role column instead of email matching, and an administrative audit log.</li>
+  <li><strong>Adaptive frame sampling</strong> driven by motion energy, so activity-dense regions are sampled more densely than static ones.</li>
+  <li><strong>Live stream ingestion</strong> — RTSP input with rolling-window analysis, which the sliding-window design already accommodates conceptually.</li>
+  <li><strong>Horizontal scaling</strong> — multiple workers behind a dedicated GPU inference service, which the ARQ architecture supports without redesign.</li>
+  <li><strong>Alerting integrations</strong> — email, SMS or push notification on high-severity detections, layered on the existing webhook infrastructure.</li>
+</ol>
+</section>
+
+<!-- ============================ 17 ============================ -->
+<section>
+<h2 class="sec">17. Appendices</h2>
+
+<h3>17.1 Appendix A — Environment variables</h3>
+<table>
+  <thead><tr><th style="width:34%">Variable</th><th style="width:20%">Default</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>DATABASE_URL</code></td><td>— (required)</td><td>PostgreSQL connection string</td></tr>
+    <tr><td><code>SECRET_KEY</code></td><td>— (required)</td><td>JWT signing key</td></tr>
+    <tr><td><code>ACCESS_TOKEN_EXPIRE_MINUTES</code></td><td>30</td><td>Token lifetime</td></tr>
+    <tr><td><code>CORS_ORIGINS</code></td><td>localhost:3000</td><td>Allowed frontend origins</td></tr>
+    <tr><td><code>SMTP_HOST</code> / <code>PORT</code> / <code>USER</code> / <code>PASSWORD</code></td><td>Gmail :587</td><td>OTP email delivery; OTPs are logged only if unset</td></tr>
+    <tr><td><code>OTP_EXPIRY_MINUTES</code></td><td>10</td><td>OTP validity window</td></tr>
+    <tr><td><code>GEMINI_API_KEY</code></td><td>""</td><td>Enables the LLM backend and harassment detection</td></tr>
+    <tr><td><code>GEMINI_MODEL</code></td><td><code>gemini-2.0-flash</code></td><td>Vision model id</td></tr>
+    <tr><td><code>CHAT_MODEL</code></td><td><code>gemini-2.0-flash</code></td><td>Model backing the per-scan chat agent</td></tr>
+    <tr><td><code>QWEN_CHAT_BASE_URL</code></td><td><code>localhost:11434/v1</code></td><td>OpenAI-compatible Qwen endpoint (Ollama by default)</td></tr>
+    <tr><td><code>QWEN_CHAT_MODEL</code></td><td><code>qwen2.5:7b</code></td><td>Agent orchestration model</td></tr>
+    <tr><td><code>QWEN_CHAT_ALLOW_LOCAL_FALLBACK</code></td><td>true</td><td>Run Qwen as a subprocess when the endpoint is down</td></tr>
+    <tr><td><code>ACTION_MODEL_ID</code></td><td>VideoMAE UCF-Crime</td><td>Swap the action checkpoint without code changes</td></tr>
+    <tr><td><code>VIOLENCE_MODEL_ID</code></td><td>VideoMAE violence</td><td>Swap the violence checkpoint</td></tr>
+    <tr><td><code>YOLO_MODEL_REPO</code> / <code>_FILE</code> / <code>_PATH</code></td><td>Subh775 / best.pt</td><td>Hub repo or a local weights file</td></tr>
+    <tr><td><code>OBJECT_MODEL_ID</code></td><td>OWLv2 base ensemble</td><td>Zero-shot detector checkpoint</td></tr>
+    <tr><td><code>REDIS_URL</code></td><td><code>redis://localhost:6379/0</code></td><td>Queue, cache and pub/sub</td></tr>
+    <tr><td><code>CACHE_TTL_SECONDS</code></td><td>300</td><td>Default cached-response lifetime</td></tr>
+    <tr><td><code>PRESIGNED_URL_TTL_SECONDS</code></td><td>3600</td><td>Presigned MinIO URL lifetime</td></tr>
+    <tr><td><code>FRAME_SAMPLE_COUNT</code></td><td>12</td><td>Preview frames streamed before detection</td></tr>
+    <tr><td><code>JOB_TIMEOUT_SECONDS</code> / <code>JOB_MAX_TRIES</code></td><td>1800 / 2</td><td>Worker limits</td></tr>
+    <tr><td><code>WEBHOOK_MAX_ATTEMPTS</code> / <code>_TIMEOUT_SECONDS</code></td><td>5 / 10.0</td><td>Delivery retry policy</td></tr>
+    <tr><td><code>MINIO_ENDPOINT</code> / <code>ACCESS_KEY</code> / <code>SECRET_KEY</code></td><td>— (required)</td><td>Object storage credentials</td></tr>
+    <tr><td><code>MINIO_BUCKET_NAME</code> / <code>MINIO_MEDIA_BUCKET</code></td><td>user-images / vision-media</td><td>The two buckets</td></tr>
+  </tbody>
+</table>
+
+<h3>17.2 Appendix B — Source file map</h3>
+<table>
+  <thead><tr><th style="width:36%">Path</th><th>Responsibility</th></tr></thead>
+  <tbody>
+    <tr><td><code>main.py</code></td><td>Application entry point, lifespan management, router registration</td></tr>
+    <tr><td><code>config.py</code></td><td>Type-safe settings via pydantic-settings</td></tr>
+    <tr><td><code>worker.py</code></td><td>The ARQ analysis pipeline</td></tr>
+    <tr><td><code>vid_img.py</code></td><td>Shared frame-sampling helpers, model ids, default queries; CLI entry point</td></tr>
+    <tr><td><code>prisma/schema.prisma</code></td><td>The 3NF schema, with per-table design rationale in comments</td></tr>
+    <tr><td><code>migrate_normalize.py</code></td><td>Legacy backfill into the normalized tables</td></tr>
+    <tr><td colspan="2" style="background:#eef2f6;font-weight:650">services/ — detection</td></tr>
+    <tr><td><code>detection_runner.py</code></td><td>Single dispatch point for every backend; the <code>auto</code> cascade</td></tr>
+    <tr><td><code>yolo_detection.py</code></td><td>Fine-tuned YOLOv8 weapon detector</td></tr>
+    <tr><td><code>video_detection.py</code></td><td>OWLv2 zero-shot open-vocabulary detector</td></tr>
+    <tr><td><code>action_detection.py</code></td><td>VideoMAE UCF-Crime action recognition</td></tr>
+    <tr><td><code>violence_detection.py</code></td><td>Binary violence classifier</td></tr>
+    <tr><td><code>llm_detection.py</code></td><td>Gemini Files API upload and constrained-JSON analysis</td></tr>
+    <tr><td><code>qwen_detection.py</code></td><td>Subprocess bridge to Qwen2.5-VL in <code>qwen_env</code></td></tr>
+    <tr><td><code>explain.py</code></td><td>Object-grounded natural-language incident explanations</td></tr>
+    <tr><td><code>frame_extract.py</code> · <code>clip_extract.py</code> · <code>annotate.py</code></td><td>Frame sampling, clip cutting, bounding-box drawing</td></tr>
+    <tr><td colspan="2" style="background:#eef2f6;font-weight:650">services/ — platform</td></tr>
+    <tr><td><code>events.py</code></td><td>The job event bus feeding SSE and webhooks</td></tr>
+    <tr><td><code>webhooks.py</code></td><td>HMAC signing, delivery and retry</td></tr>
+    <tr><td><code>cache.py</code> · <code>redis_client.py</code> · <code>queue.py</code></td><td>Redis cache, connection and ARQ pool</td></tr>
+    <tr><td><code>scan_writer.py</code> · <code>scan_repository.py</code> · <code>scan_store.py</code></td><td>Normalized result persistence and read models</td></tr>
+    <tr><td><code>media_store.py</code> · <code>minio_client.py</code></td><td>Object storage and presigned URLs</td></tr>
+    <tr><td><code>reference_data.py</code></td><td>Lookup-table seeding and label interning</td></tr>
+    <tr><td><code>auth.py</code> · <code>otp.py</code> · <code>email.py</code></td><td>Hashing, JWTs, OTP generation and delivery</td></tr>
+    <tr><td colspan="2" style="background:#eef2f6;font-weight:650">services/ — agents</td></tr>
+    <tr><td><code>chat_agent.py</code> · <code>agent_tools.py</code></td><td>Orchestrator agent and its six tools</td></tr>
+    <tr><td><code>scan_chat.py</code></td><td>Grounded per-scan analyst with citations</td></tr>
+    <tr><td><code>db_agent.py</code></td><td>Sandboxed text-to-SQL insights agent</td></tr>
+    <tr><td><code>qwen_chat.py</code></td><td>OpenAI-compatible Qwen client with dual tool-call protocols</td></tr>
+    <tr><td colspan="2" style="background:#eef2f6;font-weight:650">Documentation</td></tr>
+    <tr><td><code>docs/NORMALIZATION.md</code></td><td>Table-by-table 3NF justification</td></tr>
+    <tr><td><code>docs/ASYNC_PIPELINE.md</code></td><td>Pipeline, events, webhooks and caching reference</td></tr>
+    <tr><td><code>RUN.md</code></td><td>Operational runbook and troubleshooting</td></tr>
+    <tr><td><code>TASKLIST.md</code></td><td>Phased development plan and design notes</td></tr>
+  </tbody>
+</table>
+
+<div class="callout" style="margin-top:8mm">
+  <span class="lbl">Closing note</span>
+  The defining characteristic of this project is not any single model — every
+  checkpoint it uses is publicly available. It is the recognition that violence
+  detection decomposes into three incompatible machine-learning problems, and the
+  system built around that recognition: a cascade that routes each question to a
+  model capable of answering it, an asynchronous pipeline that keeps the interface
+  responsive while heavy models run, a normalized schema that makes results
+  queryable rather than merely storable, and a grounded conversational layer that
+  cites its evidence instead of inventing it.
+</div>
+</section>
+
+</body>
+</html>

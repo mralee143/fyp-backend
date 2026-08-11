@@ -1,0 +1,555 @@
+// Prisma schema — normalized to Third Normal Form (3NF).
+//
+// Design rules applied throughout (see docs/NORMALIZATION.md for the full
+// justification, table by table):
+//
+//   1NF  Every column holds a single atomic value. There are no array columns
+//        and no JSON blobs on the operational tables — the old
+//        `detection_scans.labels String[]` and `detection_scans.result Json`
+//        are replaced by the `scan_labels`, `segments` and `detections` tables.
+//   2NF  Every non-key column depends on the WHOLE primary key. Composite-key
+//        tables (`scan_labels`, `webhook_subscriptions`) carry no other data.
+//   3NF  No non-key column depends on another non-key column. Ownership is
+//        stored exactly once and reached by traversal
+//        (image -> video -> user, segment -> scan -> job -> video -> user),
+//        never copied onto the child row. Derived aggregates (label counts,
+//        detection counts) are computed by query, never stored.
+
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enumerations — closed value sets, so they live in the type system rather than
+// in a lookup table (a lookup table would add a join for zero extra attributes).
+// ---------------------------------------------------------------------------
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum ImageKind {
+  UPLOAD // a user-uploaded still image (the /images feature)
+  FRAME // a frame sampled from an uploaded video
+  ANNOTATED_FRAME // the same frame with detection boxes drawn on it
+  THUMBNAIL // video poster frame
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum DeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id             Int      @id @default(autoincrement())
+  email          String   @unique
+  hashedPassword String   @map("hashed_password")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  images   Image[]
+  videos   Video[]
+  webhooks WebhookEndpoint[]
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Reference / lookup tables
+//
+// These exist so that a model code, a category or a label name is stored once
+// and referenced by id. Renaming "owlv2" or re-describing a category is then a
+// single-row update instead of an UPDATE across every scan (the update anomaly
+// 3NF is meant to eliminate).
+// ---------------------------------------------------------------------------
+
+model DetectionModel {
+  id          Int     @id @default(autoincrement())
+  code        String  @unique // yolo | owlv2 | llm | qwen | action | violence | auto
+  displayName String  @map("display_name")
+  kind        String // object | vlm | action | cascade
+  isLocal     Boolean @default(true) @map("is_local")
+  description String?
+
+  jobs         AnalysisJob[]
+  scans        Scan[]
+  chatMessages ChatMessage[]
+
+  @@map("detection_models")
+}
+
+model IncidentCategory {
+  id          Int     @id @default(autoincrement())
+  code        String  @unique // violence | theft | harassment | accident | other
+  displayName String  @map("display_name")
+  severity    Int     @default(1) // 1 = low .. 5 = critical, drives UI colour
+  description String?
+
+  segments Segment[]
+
+  @@map("incident_categories")
+}
+
+model Label {
+  id   Int    @id @default(autoincrement())
+  name String @unique // "Fighting", "a gun", "Gun", "Road Accident", ...
+
+  segments   Segment[]
+  detections Detection[]
+  scanLabels ScanLabel[]
+
+  @@map("labels")
+}
+
+// ---------------------------------------------------------------------------
+// Video + analysis pipeline
+// ---------------------------------------------------------------------------
+
+/// An uploaded video, stored in MinIO. One row per distinct file per user —
+/// `checksumSha256` makes a re-upload of the same bytes a cache hit instead of
+/// a second analysis run.
+model Video {
+  id               Int      @id @default(autoincrement())
+  userId           Int      @map("user_id")
+  originalFilename String   @map("original_filename")
+  objectKey        String   @unique @map("object_key") // MinIO key
+  mimeType         String   @map("mime_type")
+  fileSize         Int      @map("file_size")
+  checksumSha256   String   @map("checksum_sha256")
+  durationSeconds  Float?   @map("duration_seconds")
+  width            Int?
+  height           Int?
+  fps              Float?
+  uploadedAt       DateTime @default(now()) @map("uploaded_at")
+
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobs   AnalysisJob[]
+  images Image[]
+
+  @@unique([userId, checksumSha256])
+  @@index([userId, uploadedAt])
+  @@map("videos")
+}
+
+/// One analysis run over one video with one model. Created the moment the
+/// upload lands, returned to the client immediately, then worked by ARQ.
+///
+/// There is deliberately no `userId` here: the owner is reachable as
+/// job -> video -> user. Copying it onto the job would make user_id
+/// transitively dependent on video_id, which is exactly the 3NF violation this
+/// schema avoids.
+model AnalysisJob {
+  id           Int       @id @default(autoincrement())
+  publicId     String    @unique @map("public_id") // uuid used in URLs + webhook payloads
+  videoId      Int       @map("video_id")
+  modelId      Int       @map("model_id") // model REQUESTED (may be "auto")
+  status       JobStatus @default(QUEUED)
+  stage        String? // uploading | extracting_frames | detecting | explaining | clipping
+  progress     Int       @default(0) // 0-100
+  errorMessage String?   @map("error_message")
+  arqJobId     String?   @map("arq_job_id")
+  queuedAt     DateTime  @default(now()) @map("queued_at")
+  startedAt    DateTime? @map("started_at")
+  finishedAt   DateTime? @map("finished_at")
+
+  // Run parameters. Single-valued settings live here (each depends on the job
+  // key alone); the OWLv2 free-text query LIST gets its own table rather than a
+  // String[] column, so the schema stays in 1NF.
+  numFrames      Int   @default(24) @map("num_frames")
+  scoreThreshold Float @default(0.2) @map("score_threshold")
+  windowSeconds  Int   @default(3) @map("window_seconds")
+  strideSeconds  Int   @default(2) @map("stride_seconds")
+
+  video   Video          @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  model   DetectionModel @relation(fields: [modelId], references: [id])
+  scan    Scan?
+  events  JobEvent[]
+  queries JobQuery[]
+
+  @@index([videoId])
+  @@index([status, queuedAt])
+  @@map("analysis_jobs")
+}
+
+/// One free-text object query for an OWLv2 run ("a gun", "a knife").
+/// Ordered rows instead of an array column — see AnalysisJob.
+model JobQuery {
+  id      Int    @id @default(autoincrement())
+  jobId   Int    @map("job_id")
+  ordinal Int
+  text    String
+
+  job AnalysisJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, ordinal])
+  @@map("job_queries")
+}
+
+/// The result of a successful job. 1:1 with AnalysisJob.
+///
+/// `summary` is the whole-video summary written when the video is analysed;
+/// each extracted image carries its own `caption` in the images table.
+model Scan {
+  id               Int      @id @default(autoincrement())
+  jobId            Int      @unique @map("job_id")
+  modelId          Int      @map("model_id") // model that actually PRODUCED this (auto picks one)
+  violenceDetected Boolean  @default(false) @map("violence_detected")
+  summary          String   @default("")
+  framesScanned    Int?     @map("frames_scanned")
+  scoreThreshold   Float?   @map("score_threshold")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  job          AnalysisJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  model        DetectionModel @relation(fields: [modelId], references: [id])
+  segments     Segment[]
+  detections   Detection[]
+  scanLabels   ScanLabel[]
+  chatSessions ChatSession[]
+
+  @@index([createdAt])
+  @@map("scans")
+}
+
+/// M:N scan <-> label. Replaces the old `labels String[]` column, which broke
+/// 1NF and made "find every scan tagged Gun" an array scan instead of an index
+/// lookup.
+model ScanLabel {
+  scanId  Int @map("scan_id")
+  labelId Int @map("label_id")
+
+  scan  Scan  @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([scanId, labelId])
+  @@index([labelId])
+  @@map("scan_labels")
+}
+
+/// One incident found in the video, with its time range. Replaces the
+/// `segments` array inside the old result JSON.
+model Segment {
+  id                     Int     @id @default(autoincrement())
+  scanId                 Int     @map("scan_id")
+  ordinal                Int // position within the scan, 0-based
+  labelId                Int     @map("label_id")
+  categoryId             Int     @map("category_id")
+  description            String
+  explanation            String?
+  startTime              Float   @map("start_time")
+  endTime                Float   @map("end_time")
+  confidence             Float
+  clipObjectKey          String? @map("clip_object_key")
+  annotatedClipObjectKey String? @map("annotated_clip_object_key")
+
+  scan      Scan             @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  label     Label            @relation(fields: [labelId], references: [id])
+  category  IncidentCategory @relation(fields: [categoryId], references: [id])
+  images    Image[]
+  citations ChatCitation[]
+
+  @@unique([scanId, ordinal])
+  @@index([scanId, startTime])
+  @@map("segments")
+}
+
+/// One object box found in one sampled frame (the yolo/owlv2 backends).
+/// Replaces the `detections` array in the result JSON. The old `label_counts`
+/// map is gone — it is a GROUP BY over this table, and storing a derived
+/// aggregate is precisely what 3NF forbids.
+model Detection {
+  id      Int   @id @default(autoincrement())
+  scanId  Int   @map("scan_id")
+  imageId Int?  @map("image_id") // the frame this box was drawn on
+  labelId Int   @map("label_id")
+  second  Float
+  score   Float
+  boxX1   Float @map("box_x1")
+  boxY1   Float @map("box_y1")
+  boxX2   Float @map("box_x2")
+  boxY2   Float @map("box_y2")
+
+  scan  Scan  @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id])
+  image Image? @relation(fields: [imageId], references: [id], onDelete: SetNull)
+
+  @@index([scanId, second])
+  @@map("detections")
+}
+
+// ---------------------------------------------------------------------------
+// Images
+// ---------------------------------------------------------------------------
+
+/// Every stored image — direct user uploads AND every frame extracted from a
+/// video — lives here, distinguished by `kind`.
+///
+/// Ownership is stored exactly once: an UPLOAD has `userId` set and `videoId`
+/// null, a FRAME has `videoId` set and `userId` null (its owner is
+/// image -> video -> user). A CHECK constraint added by the migration enforces
+/// that exactly one of the two is present, so the owner can never disagree with
+/// itself.
+///
+/// `caption` is the per-image summary produced while the video is processed —
+/// the frame-level counterpart to `Scan.summary`.
+model Image {
+  id                Int       @id @default(autoincrement())
+  kind              ImageKind @default(UPLOAD)
+  userId            Int?      @map("user_id") // set for UPLOAD only
+  videoId           Int?      @map("video_id") // set for video-derived frames only
+  segmentId         Int?      @map("segment_id") // frame belongs to this incident
+  objectKey         String    @unique @map("object_key")
+  originalFilename  String?   @map("original_filename")
+  generatedFilename String    @map("generated_filename")
+  mimeType          String    @map("mime_type")
+  fileSize          Int       @map("file_size")
+  width             Int?
+  height            Int?
+  sequence          Int? // frame ordinal within the video
+  capturedAtSeconds Float?    @map("captured_at_seconds")
+  caption           String? // per-image summary
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  user       User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video      Video?         @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  segment    Segment?       @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  detections Detection[]
+  citations  ChatCitation[]
+
+  @@index([userId])
+  @@index([videoId, sequence])
+  @@index([segmentId])
+  @@map("images")
+}
+
+// ---------------------------------------------------------------------------
+// Per-video chat agent
+// ---------------------------------------------------------------------------
+
+/// A conversation grounded in one scan. Owner is reached through
+/// session -> scan -> job -> video -> user.
+model ChatSession {
+  id            Int      @id @default(autoincrement())
+  publicId      String   @unique @map("public_id")
+  scanId        Int      @map("scan_id")
+  title         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  lastMessageAt DateTime @default(now()) @map("last_message_at")
+
+  scan     Scan          @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([scanId, lastMessageAt])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        Int      @id @default(autoincrement())
+  sessionId Int      @map("session_id")
+  ordinal   Int // turn order within the session
+  role      ChatRole
+  content   String
+  modelId   Int?     @map("model_id") // which model produced an ASSISTANT turn
+  latencyMs Int?     @map("latency_ms")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  session   ChatSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  model     DetectionModel? @relation(fields: [modelId], references: [id])
+  citations ChatCitation[]
+
+  @@unique([sessionId, ordinal])
+  @@map("chat_messages")
+}
+
+/// What an assistant turn grounded itself on — so the UI can show "this answer
+/// came from segment 2 / frame at 00:14" instead of an unsourced claim.
+model ChatCitation {
+  id        Int  @id @default(autoincrement())
+  messageId Int  @map("message_id")
+  segmentId Int? @map("segment_id")
+  imageId   Int? @map("image_id")
+
+  message ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  segment Segment?    @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  image   Image?      @relation(fields: [imageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("chat_citations")
+}
+
+// ---------------------------------------------------------------------------
+// Event log + webhooks
+// ---------------------------------------------------------------------------
+
+/// Append-only log of everything that happened during a job. This is the single
+/// source of truth behind BOTH delivery channels: it is published to Redis for
+/// the browser's SSE stream and POSTed to registered webhook endpoints.
+///
+/// `sequence` lets a reconnecting SSE client replay from Last-Event-ID without
+/// missing or duplicating an event.
+model JobEvent {
+  id        Int      @id @default(autoincrement())
+  jobId     Int      @map("job_id")
+  sequence  Int // 1-based, monotonic per job
+  eventType String   @map("event_type") // job.started | frame.ready | segment.ready | ...
+  stage     String?
+  progress  Int?
+  message   String?
+  imageId   Int?     @map("image_id") // frame.ready payload
+  segmentId Int?     @map("segment_id") // segment.ready payload
+  createdAt DateTime @default(now()) @map("created_at")
+
+  job        AnalysisJob       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@unique([jobId, sequence])
+  @@index([jobId, id])
+  @@map("job_events")
+}
+
+model WebhookEndpoint {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  url         String
+  secret      String // HMAC-SHA256 signing key for X-Signature
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptions WebhookSubscription[]
+  deliveries    WebhookDelivery[]
+
+  @@index([userId])
+  @@map("webhook_endpoints")
+}
+
+model WebhookEventType {
+  id   Int    @id @default(autoincrement())
+  name String @unique // job.started, frame.ready, segment.ready, job.completed, job.failed
+
+  subscriptions WebhookSubscription[]
+
+  @@map("webhook_event_types")
+}
+
+/// M:N endpoint <-> event type. An `events String[]` column on the endpoint
+/// would have been the 1NF violation this table exists to avoid.
+model WebhookSubscription {
+  endpointId  Int @map("endpoint_id")
+  eventTypeId Int @map("event_type_id")
+
+  endpoint  WebhookEndpoint  @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  eventType WebhookEventType @relation(fields: [eventTypeId], references: [id], onDelete: Cascade)
+
+  @@id([endpointId, eventTypeId])
+  @@index([eventTypeId])
+  @@map("webhook_subscriptions")
+}
+
+/// One delivery attempt of one job event to one endpoint. The body is not
+/// stored — it is rebuilt from the referenced JobEvent, so there is no second
+/// copy of the event to drift out of sync.
+model WebhookDelivery {
+  id           Int            @id @default(autoincrement())
+  endpointId   Int            @map("endpoint_id")
+  jobEventId   Int            @map("job_event_id")
+  attempt      Int            @default(1)
+  status       DeliveryStatus @default(PENDING)
+  statusCode   Int?           @map("status_code")
+  errorMessage String?        @map("error_message")
+  durationMs   Int?           @map("duration_ms")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  deliveredAt  DateTime?      @map("delivered_at")
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  jobEvent JobEvent        @relation(fields: [jobEventId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId, createdAt])
+  @@index([status])
+  @@map("webhook_deliveries")
+}
+
+// ---------------------------------------------------------------------------
+// Legacy — read-only source for the backfill, dropped by
+// `python migrate_normalize.py --drop-legacy` once the data has moved.
+// ---------------------------------------------------------------------------
+
+model DetectionScan {
+  id               Int      @id @default(autoincrement())
+  userId           Int      @map("user_id")
+  filename         String
+  model            String
+  violenceDetected Boolean  @default(false) @map("violence_detected")
+  summary          String?
+  labels           String[] @default([])
+  result           Json
+  videoUrl         String?  @map("video_url")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("detection_scans")
+}
+
+// ---------------------------------------------------------------------------
+// Qwen agent chatbot (routes/chat.py)
+//
+// Documented here for reference only — like DetectionScan above, these tables
+// are reached through raw SQL (services/chat_store.py, which also creates them
+// on startup), so `userId` is a plain column rather than a Prisma relation.
+//
+// Deliberately named `agent_chat_*` so they never collide with the normalized
+// ChatSession/ChatMessage above: that pair is a per-scan chat keyed by scanId,
+// whereas these back the standalone agent chat where a conversation owns its
+// own uploaded video and may produce many scans.
+// ---------------------------------------------------------------------------
+
+model AgentChatSession {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  title      String   @default("New chat")
+  videoPath  String?  @map("video_path") // on-disk path under media/chat/<user_id>/
+  videoName  String?  @map("video_name") // original filename shown in the UI
+  videoUrl   String?  @map("video_url") // /media/... URL for playback
+  lastScanId Int?     @map("last_scan_id") // most recent scan produced in this chat
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @map("updated_at")
+
+  @@index([userId])
+  @@map("agent_chat_sessions")
+}
+
+model AgentChatMessage {
+  id          Int      @id @default(autoincrement())
+  sessionId   Int      @map("session_id")
+  role        String // user | assistant | tool
+  content     String   @default("")
+  toolName    String?  @map("tool_name") // set on `tool` rows
+  toolPayload Json?    @map("tool_payload") // {arguments, result} of one tool call
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([sessionId])
+  @@map("agent_chat_messages")
+}

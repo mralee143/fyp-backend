@@ -1,0 +1,19 @@
+# node_modules is reinstalled from package-lock.json inside the image, and
+# .next holds a host build that would shadow the one produced here.
+node_modules
+.next
+out
+build
+npm-debug.log*
+
+# Secrets / host-specific config. NEXT_PUBLIC_API_URL is passed as a build arg.
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+README.md
+AGENTS.md
+CLAUDE.md
+*.tsbuildinfo
