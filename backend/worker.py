@@ -460,15 +460,19 @@ async def _build_clip(prisma: Prisma, scan: Any, segment: Any, video_path: str) 
 async def _illustrate_segment(
     prisma: Prisma, video: Any, segment: Any, video_path: str
 ) -> None:
-    """Store stills spanning an incident, midpoint first.
+    """Store stills spanning an incident, the peak moment first.
 
     One cover image says an incident happened; a strip across the window says
     *when inside it* — which is what the chat agent needs to answer "which frame
-    shows the punch?" with a picture instead of a guess. The midpoint is stored
-    first so anything showing a single cover still picks the representative one.
+    shows the punch?" with a picture instead of a guess. The peak is stored
+    first so anything showing a single cover still picks the moment the model
+    pointed at rather than whatever happened to be halfway through the span.
     """
     for second in incident_frame_seconds(
-        segment.startTime, segment.endTime, settings.incident_frame_count
+        segment.startTime,
+        segment.endTime,
+        settings.incident_frame_count,
+        segment.peakSecond,
     ):
         try:
             await store_incident_frame(prisma, video, segment, video_path, second)

@@ -25,7 +25,12 @@ import logging
 import sys
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+# Running this file directly puts scripts/ on sys.path, not backend/. Add the
+# latter so `services` resolves. Must precede the imports below.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from prisma import Prisma
 

@@ -17,7 +17,9 @@ import logging
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
+from config import settings
 from services.action_detection import detect_actions
+from services.incident_merge import consolidate
 from services.llm_detection import LlmDetectionError, detect_violence_llm
 from services.qwen_detection import QwenDetectionError, detect_violence_qwen
 from services.video_detection import detect_weapons
@@ -56,20 +58,41 @@ async def _noop(_percent: int, _stage: str, _message: str) -> None:
     return None
 
 
-async def _focus(result: dict, video_path: Path) -> dict:
-    """Keep one incident from covering the whole clip.
+async def _shape(result: dict, video_path: Path) -> dict:
+    """Turn a backend's raw segments into the incidents the report shows.
 
-    A span that runs the length of the video marks every second as worth
-    watching, which is the same as marking none of them. Anything past
-    `MAX_INCIDENT_COVERAGE` is pulled back to the moment the model was most
-    certain about, and says so in its own description — the narrowed span is a
-    pointer to the peak, not a measured boundary.
+    Two corrections, in this order, because each depends on the other's output:
 
-    A no-op for the object detectors (they report per-frame hits, not spans) and
-    for the window models, whose spans are already inside the limit.
+      1. **Consolidate.** One event described three times is three cards and
+         three timeline bands; `incident_merge` folds overlapping and adjacent
+         rows back into the single incident they describe, and drops the ones
+         too weak to stand behind.
+      2. **Focus.** A span that runs the length of the video marks every second
+         as worth watching, which is the same as marking none of them. Anything
+         past `MAX_INCIDENT_COVERAGE` — including a span that only got that long
+         by merging — is pulled back to the moment the model was most certain
+         about, and says so in its own description.
+
+    A no-op for the object detectors, which report per-frame hits, not spans.
     """
     segments = result.get("segments")
-    if not segments or MAX_INCIDENT_COVERAGE >= 1:
+    if not segments:
+        return result
+
+    result["segments"] = segments = consolidate(
+        segments,
+        gap_seconds=settings.incident_merge_gap_seconds,
+        min_confidence=settings.incident_min_confidence,
+        max_incidents=settings.max_incidents_per_scan,
+    )
+    # Consolidation can drop every row of a result the backend called positive
+    # (all of them below the floor is impossible — one always survives), but it
+    # can also leave a single hedged incident. Keep the flag honest either way.
+    result["violence_detected"] = bool(segments) and bool(
+        result.get("violence_detected", True)
+    )
+
+    if MAX_INCIDENT_COVERAGE >= 1:
         return result
 
     duration = await asyncio.to_thread(video_duration, video_path)
@@ -155,24 +178,25 @@ async def run_detection(
         result = await asyncio.to_thread(
             detect_violence_llm, video_bytes=video_bytes, mime_type=mime
         )
-        return await _focus(result, video_path)
+        return await _shape(result, video_path)
 
     if model == "qwen":
         await progress(40, "detecting", "Running the local Qwen2.5-VL model…")
         result = await asyncio.to_thread(detect_violence_qwen, video_path=str(video_path))
-        return await _focus(result, video_path)
+        return await _shape(result, video_path)
 
     if model == "action":
         await progress(40, "detecting", "Recognising actions across the timeline…")
-        return await asyncio.to_thread(
+        result = await asyncio.to_thread(
             detect_actions,
             video_path=video_path,
             window_seconds=window_seconds,
             stride_seconds=stride_seconds,
             threshold=threshold,
         )
+        return await _shape(result, video_path)
 
-    return await _focus(await _run_auto(video_path, progress), video_path)
+    return await _shape(await _run_auto(video_path, progress), video_path)
 
 
 async def _run_auto(video_path: Path, progress: ProgressFn) -> dict:

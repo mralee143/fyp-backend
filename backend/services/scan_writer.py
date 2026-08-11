@@ -58,12 +58,26 @@ async def create_scan(prisma: Any, job: Any, result: dict, model_code: str) -> A
     )
 
 
+def _peak_second(raw: dict, start: float, end: float) -> Optional[float]:
+    """The reported peak, clamped into the span; None when none was reported."""
+    peak = raw.get("peak_second")
+    if peak is None:
+        return None
+    try:
+        peak = float(peak)
+    except (TypeError, ValueError):
+        return None
+    return round(min(max(peak, min(start, end)), max(start, end)), 2)
+
+
 async def write_segments(prisma: Any, scan: Any, result: dict) -> list[Any]:
     """Insert one `segments` row per flagged event, in timeline order."""
     raw_segments = result.get("segments") or []
     created: list[Any] = []
 
     for ordinal, raw in enumerate(raw_segments):
+        start = float(raw.get("start_time") or 0.0)
+        end = float(raw.get("end_time") or 0.0)
         segment = await prisma.segment.create(
             data={
                 "scanId": scan.id,
@@ -72,8 +86,11 @@ async def write_segments(prisma: Any, scan: Any, result: dict) -> list[Any]:
                 "categoryId": await get_category_id(prisma, str(raw.get("category") or "other")),
                 "description": str(raw.get("description") or ""),
                 "explanation": raw.get("explanation"),
-                "startTime": float(raw.get("start_time") or 0.0),
-                "endTime": float(raw.get("end_time") or 0.0),
+                "startTime": start,
+                "endTime": end,
+                # Stored only when the backend actually reported one — see the
+                # column's comment on why a midpoint is not written here.
+                "peakSecond": _peak_second(raw, start, end),
                 "confidence": float(raw.get("confidence") or 0.0),
             }
         )

@@ -26,6 +26,8 @@ from typing import Any, Awaitable, Callable, Optional
 from fastapi.concurrency import run_in_threadpool
 
 from agentic import chat_store, db_agent
+from config import settings
+from services.incident_merge import consolidate
 from services.frame_extract import (
     annotate_frame,
     describe_location,
@@ -99,10 +101,12 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "name": "analyze_video",
             "description": (
                 "Run threat detection on the video the user uploaded to this "
-                "chat. Returns detected weapons/incidents with timestamps and "
-                "confidences, and stores the scan so it can be queried later. "
-                "Call this whenever the user asks what is in / what happens in "
-                "their video, or asks for a re-scan with a different model."
+                "chat, and store the scan. Every upload is ALREADY analysed "
+                "automatically on arrival, so do not call this to answer "
+                "'what is in my video' — those findings are in the conversation "
+                "and this tool will just hand them back. Call it only when the "
+                "user explicitly asks to re-scan or names a different model, "
+                "and set force_rescan=true when they do."
             ),
             "parameters": {
                 "type": "object",
@@ -112,6 +116,14 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                         "enum": list(DETECTORS),
                         "description": " | ".join(
                             f"{name}: {desc}" for name, desc in DETECTORS.items()
+                        ),
+                    },
+                    "force_rescan": {
+                        "type": "boolean",
+                        "description": (
+                            "True only when the user explicitly asked for the "
+                            "video to be analysed again. Otherwise the stored "
+                            "findings are returned without re-running anything."
                         ),
                     },
                     "queries": {
@@ -281,13 +293,21 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 def _compact_result(result: dict) -> dict:
     """Shrink a detection result to what's useful in a chat turn."""
     compact: dict[str, Any] = {"model_id": result.get("model_id")}
+    detections = result.get("detections") or []
+    segments = result.get("segments") or []
 
-    if "detections" in result:
-        detections = result.get("detections") or []
+    # A stored scan always carries both keys (see scan_repository._build_detail),
+    # so presence alone can't pick the branch: an incident scan would be read as
+    # an empty object detection. Go by what is actually in there, and let an
+    # incident win — it is the headline, boxes are the supporting detail.
+    if not segments and ("detections" in result or detections):
         compact.update(
             {
                 "kind": "object_detection",
-                "weapon_detected": bool(result.get("weapon_detected")),
+                # Stored scans keep one "threat found" flag for both shapes.
+                "weapon_detected": bool(
+                    result.get("weapon_detected", result.get("violence_detected"))
+                ),
                 "frames_scanned": result.get("frames_scanned"),
                 "detection_count": result.get("detection_count", len(detections)),
                 "label_counts": result.get("label_counts", {}),
@@ -307,7 +327,6 @@ def _compact_result(result: dict) -> dict:
             }
         )
     else:
-        segments = result.get("segments") or []
         compact.update(
             {
                 "kind": "incident_analysis",
@@ -376,18 +395,29 @@ def _run_detector(detector: str, path: Path, args: dict[str, Any]) -> dict:
 
 
 def _focus_segments(result: dict, path: Path) -> dict:
-    """Keep one incident from covering the whole clip.
+    """Fold repeated rows into one incident, then keep it off the whole clip.
 
-    A span running the length of the video marks every second as worth watching,
-    which is the same as marking none of them — and the chat's chapter bar has
-    nothing to point at. Anything past `MAX_INCIDENT_COVERAGE` is pulled back to
-    the moment the model was most certain about, and says so in its description.
+    The chat runs the same models the worker does and inherits the same habit of
+    describing one event several times, so it gets the same two corrections (see
+    `services.detection_runner._shape`): consolidate first, then pull any span
+    still covering more than `MAX_INCIDENT_COVERAGE` of the video back to the
+    moment the model was most certain about, saying so in its description.
 
     Blocking (it reads the video), so call it in a thread. A no-op for the object
     detectors, which report per-frame hits rather than spans.
     """
     segments = result.get("segments")
-    if not segments or MAX_INCIDENT_COVERAGE >= 1:
+    if not segments:
+        return result
+
+    result["segments"] = segments = consolidate(
+        segments,
+        gap_seconds=settings.incident_merge_gap_seconds,
+        min_confidence=settings.incident_min_confidence,
+        max_incidents=settings.max_incidents_per_scan,
+    )
+
+    if MAX_INCIDENT_COVERAGE >= 1:
         return result
 
     duration = video_duration(path)
@@ -437,6 +467,60 @@ def _run_auto(path: Path) -> dict:
     }
 
 
+async def _attach_frames(compact: dict, path: Path) -> None:
+    """Grab the still at each flagged moment, boxed where the detector fired.
+
+    What lets an answer show the exact frame an incident happens on rather than
+    only naming its timestamp. A bonus on top of the analysis — never fatal.
+    """
+    moments = compact.get("segments") or compact.get("top_detections") or []
+    if not moments:
+        return
+    try:
+        await run_in_threadpool(extract_frames_for_moments, str(path), moments)
+    except Exception as e:
+        logger.warning("agent: frame extraction failed: %s", e)
+
+
+async def _stored_analysis(
+    ctx: AgentContext, path: Path, detector: str
+) -> Optional[dict]:
+    """This session's existing scan, dressed as an `analyze_video` result.
+
+    Returns None when there is nothing usable stored, so the caller falls
+    through to a real run. The frames are re-attached because they live on disk
+    under the request's media directory rather than in the scan row, and the
+    answer is only as good as the picture it can point at.
+    """
+    row = await get_scan(ctx.prisma, ctx.user_id, int(ctx.last_scan_id))
+    if not row:
+        return None
+
+    compact = _compact_result(row.get("result") or {})
+    await _attach_frames(compact, path)
+    compact.update(
+        {
+            "detector": row.get("model") or detector,
+            "scan_id": row["id"],
+            "video": ctx.video_name,
+            "reused": True,
+            "note": (
+                "These are the findings from the analysis already run on this "
+                "video — nothing was re-scanned. Answer from them. If the user "
+                "wants a fresh run or a different model, call analyze_video "
+                "again with force_rescan=true."
+            ),
+        }
+    )
+    logger.info(
+        "agent: user %s answered from stored scan %s instead of re-running '%s'",
+        ctx.user_id,
+        row["id"],
+        detector,
+    )
+    return compact
+
+
 async def _tool_analyze_video(ctx: AgentContext, args: dict[str, Any]) -> dict:
     """Run a detector over the session's video and persist the scan."""
     path_str = ctx.video_path
@@ -452,6 +536,15 @@ async def _tool_analyze_video(ctx: AgentContext, args: dict[str, Any]) -> dict:
     detector = str(args.get("detector") or "yolo").lower().strip()
     if detector not in DETECTORS:
         return {"error": f"Unknown detector '{detector}'. Choose one of: {', '.join(DETECTORS)}."}
+
+    # The upload was analysed the moment it arrived. Re-running costs the user
+    # minutes and returns the same findings, so a call that isn't an explicit
+    # re-scan is answered from the stored scan — the prompt asks the model not
+    # to make it, and this makes the mistake harmless when it does anyway.
+    if ctx.last_scan_id and not args.get("force_rescan"):
+        stored = await _stored_analysis(ctx, path, detector)
+        if stored is not None:
+            return stored
 
     logger.info(
         "agent: user %s analysing %s with '%s'", ctx.user_id, path.name, detector
@@ -475,15 +568,7 @@ async def _tool_analyze_video(ctx: AgentContext, args: dict[str, Any]) -> dict:
         ctx.session["last_scan_id"] = scan_id
 
     compact = _compact_result(result)
-
-    # Grab the still at each flagged moment so the answer can show the exact
-    # frame the incident happens on, not just its timestamp.
-    moments = compact.get("segments") or compact.get("top_detections") or []
-    if moments:
-        try:
-            await run_in_threadpool(extract_frames_for_moments, str(path), moments)
-        except Exception as e:  # frames are a bonus — never fail the analysis
-            logger.warning("agent: frame extraction failed: %s", e)
+    await _attach_frames(compact, path)
 
     compact.update({"detector": detector, "scan_id": scan_id, "video": ctx.video_name})
     return compact
@@ -648,8 +733,48 @@ async def analyze_and_store(
     The auto-analyze-on-attach path: same work ``analyze_video`` does when the
     orchestrator calls it, but invoked directly (no LLM needed) the moment a
     video is uploaded.
+
+    Only used when the streamed pipeline could not do the job — see
+    ``read_stored_scan``, which is the normal path.
     """
     return await _tool_analyze_video(ctx, {"detector": detector, **(args or {})})
+
+
+async def read_stored_scan(ctx: AgentContext, scan_id: int) -> Optional[dict]:
+    """Present a scan the worker already produced, without detecting again.
+
+    The chat upload and the streamed pipeline are the *same* file: once the
+    worker's job has finished there is nothing left to detect, so the chat
+    readout is built from the stored rows. Running the detectors a second time
+    would only burn a minute of GPU to (re)state what is already known — and
+    write a second scan for one video.
+
+    Returns None when the scan isn't this user's, which leaves the caller free
+    to fall back to analysing inline.
+    """
+    row = await get_scan(ctx.prisma, ctx.user_id, scan_id)
+    if not row:
+        return None
+
+    compact = _compact_result(row.get("result") or {})
+
+    # The worker stores its own frames; these are cut from the session's local
+    # copy so the chat card boxes exactly the moments echoed above.
+    path = Path(ctx.video_path) if ctx.video_path else None
+    if path and path.exists():
+        await _attach_frames(compact, path)
+
+    await chat_store.set_session_scan(ctx.prisma, ctx.session_id, scan_id)
+    ctx.session["last_scan_id"] = scan_id
+
+    compact.update(
+        {
+            "detector": row.get("model") or compact.get("model_id"),
+            "scan_id": scan_id,
+            "video": row.get("filename") or ctx.video_name,
+        }
+    )
+    return compact
 
 
 def summarize_result(result: dict) -> str:

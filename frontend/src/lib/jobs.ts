@@ -49,6 +49,8 @@ export interface JobSegment {
   explanation: string | null;
   start_time: number;
   end_time: number;
+  /** The single second the incident reads on — where the timeline marks it. */
+  peak_second: number | null;
   confidence: number;
   clip_url: string | null;
   annotated_clip_url: string | null;

@@ -55,6 +55,25 @@ class ChatMessageIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 
 
+class ChatAnalyzeIn(BaseModel):
+    """How the chat should produce the readout for the attached video.
+
+    ``scan_id`` is the normal case: the streamed job already analysed this
+    upload, so the chat writes up that scan instead of detecting again. The
+    detector fields only apply to the fallback, when no worker produced one.
+    """
+
+    scan_id: Optional[int] = Field(
+        None, description="Scan the streamed job produced for this video, if any."
+    )
+    detector: Optional[str] = Field(
+        None, description="Fallback detector: auto | yolo | owlv2 | action | qwen."
+    )
+    queries: Optional[str] = Field(
+        None, description="owlv2 only: comma-separated objects to look for."
+    )
+
+
 class ToolCallOut(BaseModel):
     """One tool the agent ran during a turn, with its result."""
 

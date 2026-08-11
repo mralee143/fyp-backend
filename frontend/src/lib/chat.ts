@@ -210,13 +210,24 @@ export async function attachVideo(
 }
 
 /**
- * Run detection on the session's attached video immediately and store it.
- * Called right after an upload so findings appear without the user asking.
+ * Put the attached video's findings into the conversation, without analysing
+ * it twice.
+ *
+ * Pass the `scanId` the streamed job produced and the backend simply writes
+ * that scan up as the tool card and the summary. Omit it — no worker took the
+ * job, or it failed — and the detectors run inline with `detector` instead.
  */
-export async function analyzeVideo(sessionId: number): Promise<ChatTurn> {
+export async function analyzeVideo(
+  sessionId: number,
+  options: { scanId?: number | null; detector?: string; queries?: string } = {}
+): Promise<ChatTurn> {
   const { data } = await api.post<ChatTurn>(
     `/chat/sessions/${sessionId}/analyze`,
-    {},
+    {
+      scan_id: options.scanId ?? null,
+      detector: options.detector ?? null,
+      queries: options.queries ?? null,
+    },
     { timeout: 0 }
   );
   return data;

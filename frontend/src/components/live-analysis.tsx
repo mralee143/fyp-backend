@@ -349,6 +349,7 @@ export function LiveAnalysis() {
               key: segment.id,
               start: segment.start_time,
               end: segment.end_time,
+              peak: segment.peak_second,
               label: segment.label,
               category: segment.category,
               confidence: segment.confidence,

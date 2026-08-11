@@ -48,8 +48,10 @@ def _session_state_block(session: dict) -> str:
         lines.append("Attached video: none — the user has not uploaded one yet.")
     if session.get("last_scan_id"):
         lines.append(
-            f"Most recent scan in this chat: scan_id {session['last_scan_id']}. "
-            "Re-analysing is only needed if the user asks for a different model."
+            f"This video HAS ALREADY BEEN ANALYSED (scan_id "
+            f"{session['last_scan_id']}) and the findings are in the messages "
+            "above. Answer from them. Do not call analyze_video again unless "
+            "the user explicitly asks for a re-scan or a different model."
         )
     else:
         lines.append("No analysis has been run in this chat yet.")

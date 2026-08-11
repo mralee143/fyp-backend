@@ -67,6 +67,29 @@ export interface LiveAnalysisState {
 /** The one open SSE connection; replaced whenever a new video is attached. */
 let subscription: JobSubscription | null = null;
 
+/** The streamed analysis of the current upload, awaited once by `submit`. */
+let pendingJob: Promise<JobOutcome> | null = null;
+
+/** How the streamed analysis of an upload ended. */
+interface JobOutcome {
+  /** The scan the worker wrote, when it finished and produced one. */
+  scanId: number | null;
+  /** False when nothing usable came back and the chat must analyse itself. */
+  ok: boolean;
+}
+
+/**
+ * How long to wait on a silent job before analysing in the chat instead.
+ *
+ * A queued job with nobody consuming the queue never progresses, and waiting
+ * on it forever would leave the conversation stuck on "Waiting for a worker".
+ * `job.queued` doesn't count as a sign of life — it is replayed to every new
+ * subscriber — so the short budget covers "is a worker even there", and the
+ * long one covers a stage that reports nothing while it runs (the VLMs).
+ */
+const NO_WORKER_MS = 60_000;
+const STALLED_MS = 300_000;
+
 /**
  * The single moment worth showing from a finished analysis.
  *
@@ -131,8 +154,8 @@ interface ChatState {
     file: File,
     options?: { model?: string; queries?: string }
   ) => Promise<string>;
-  /** Follow a queued analysis job over SSE. */
-  watchJob: (jobId: string, queued: boolean) => void;
+  /** Follow a queued analysis job over SSE; resolves when it settles. */
+  watchJob: (jobId: string, queued: boolean) => Promise<JobOutcome>;
   /** Close the SSE connection (call on unmount).*/
   stopStream: () => void;
   /**
@@ -153,12 +176,18 @@ interface ChatState {
 
 export const useChatStore = create<ChatState>((set, get) => {
   /**
-   * Run the detectors over the attached video and fold the readout into the
-   * transcript — the tool card with the exact frames, then the written summary.
-   * The caller owns the `sending` flag.
+   * Fold the video's readout into the transcript — the tool card with the exact
+   * frames, then the written summary. The caller owns the `sending` flag.
+   *
+   * With a `scanId` this only writes up what the streamed job already found;
+   * without one the backend runs the detectors itself. The video is never
+   * analysed twice for a single upload.
    */
-  async function runAnalysis(id: number): Promise<void> {
-    const turn = await analyzeVideo(id);
+  async function runAnalysis(
+    id: number,
+    options: { scanId?: number | null; detector?: string; queries?: string } = {}
+  ): Promise<void> {
+    const turn = await analyzeVideo(id, options);
 
     const appended: ChatMessage[] = turn.tool_calls.map((call) => ({
       id: nextTempId(),
@@ -333,6 +362,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       // Drop any stream still running for a previous upload.
       get().stopStream();
+      pendingJob = null;
       set({ uploadPercent: 0, live: null });
 
       try {
@@ -349,9 +379,11 @@ export const useChatStore = create<ChatState>((set, get) => {
           panelOpen: true,
         }));
 
-        if (attached.job_id) {
-          get().watchJob(attached.job_id, attached.queued);
-        }
+        // The job is the only thing that analyses this upload; `submit` waits
+        // on the promise so the summary describes what the worker found.
+        pendingJob = attached.job_id
+          ? get().watchJob(attached.job_id, attached.queued)
+          : null;
         return attached.video_name;
       } finally {
         set({ uploadPercent: null });
@@ -377,42 +409,88 @@ export const useChatStore = create<ChatState>((set, get) => {
       const patchLive = (patch: Partial<LiveAnalysisState>) =>
         set((state) => (state.live ? { live: { ...state.live, ...patch } } : {}));
 
-      subscription = subscribeToJob(jobId, {
-        onEvent: (event) =>
-          patchLive({
-            progress: event.progress ?? 0,
-            stage: event.stage,
-            ...(event.message ? { message: event.message } : {}),
-          }),
-        // Frames render the moment the worker announces them, long before the
-        // detectors finish — this is what makes the wait legible.
-        onFrame: (frame) =>
-          set((state) =>
-            state.live && !state.live.frames.some((f) => f.id === frame.id)
-              ? { live: { ...state.live, frames: [...state.live.frames, frame] } }
-              : {}
-          ),
-        onSegment: (segment) =>
-          set((state) =>
-            state.live && !state.live.segments.some((s) => s.id === segment.id)
-              ? { live: { ...state.live, segments: [...state.live.segments, segment] } }
-              : {}
-          ),
-        onDone: async (event) => {
-          if (event.event === "job.failed") {
-            patchLive({ status: "failed", message: event.message ?? "Analysis failed." });
-            return;
-          }
-          patchLive({ status: "done", progress: 100 });
-          try {
-            // Captions are written at the very end of the pipeline.
-            const snapshot = await getJob(jobId);
-            patchLive({ frames: snapshot.frames, scanId: snapshot.scan_id });
-          } catch {
-            /* the stream already told us it succeeded */
-          }
-        },
-        onError: (message) => patchLive({ message }),
+      return new Promise<JobOutcome>((resolve) => {
+        let settled = false;
+        let timer: ReturnType<typeof setTimeout>;
+
+        const settle = (outcome: JobOutcome) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(outcome);
+        };
+
+        /** Restart the patience clock; a silent job eventually gives up. */
+        const wait = (ms: number) => {
+          // Already given up (or finished): a late-waking worker still updates
+          // the card, but must not re-arm a clock that declares it dead.
+          if (settled) return;
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            patchLive({
+              status: "failed",
+              message:
+                "No worker is processing this — analysing it here instead. " +
+                "Start one with: python -m arq worker.WorkerSettings",
+            });
+            get().stopStream();
+            settle({ scanId: null, ok: false });
+          }, ms);
+        };
+
+        // Nothing was enqueued, so nothing will ever run it.
+        if (!queued) {
+          settle({ scanId: null, ok: false });
+        } else {
+          wait(NO_WORKER_MS);
+        }
+
+        subscription = subscribeToJob(jobId, {
+          onEvent: (event) => {
+            // `job.queued` is replayed to every subscriber, so it says nothing
+            // about whether a worker exists.
+            if (event.event !== "job.queued") wait(STALLED_MS);
+            patchLive({
+              progress: event.progress ?? 0,
+              stage: event.stage,
+              ...(event.message ? { message: event.message } : {}),
+            });
+          },
+          // Frames render the moment the worker announces them, long before the
+          // detectors finish — this is what makes the wait legible.
+          onFrame: (frame) =>
+            set((state) =>
+              state.live && !state.live.frames.some((f) => f.id === frame.id)
+                ? { live: { ...state.live, frames: [...state.live.frames, frame] } }
+                : {}
+            ),
+          onSegment: (segment) =>
+            set((state) =>
+              state.live && !state.live.segments.some((s) => s.id === segment.id)
+                ? { live: { ...state.live, segments: [...state.live.segments, segment] } }
+                : {}
+            ),
+          onDone: async (event) => {
+            if (event.event === "job.failed") {
+              patchLive({ status: "failed", message: event.message ?? "Analysis failed." });
+              settle({ scanId: null, ok: false });
+              return;
+            }
+            patchLive({ status: "done", progress: 100 });
+            try {
+              // Captions are written at the very end of the pipeline.
+              const snapshot = await getJob(jobId);
+              patchLive({ frames: snapshot.frames, scanId: snapshot.scan_id });
+              // Without a scan there is nothing to write up, so let the chat
+              // fall back to detecting rather than report an empty analysis.
+              settle({ scanId: snapshot.scan_id, ok: snapshot.scan_id !== null });
+            } catch {
+              /* the stream already told us it succeeded */
+              settle({ scanId: null, ok: false });
+            }
+          },
+          onError: (message) => patchLive({ message }),
+        });
       });
     },
 
@@ -449,12 +527,19 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       try {
         if (file) {
-          // One upload, two consumers: the streamed job (frames appear within a
-          // second or two) and the agent's tools, which need the file on disk.
+          // One upload, one analysis: the queued job is what runs the models —
+          // frames appear within a second or two — and the file stays on disk
+          // for the agent's tools and the review player.
           await get().attach(file, options);
+          const outcome = await pendingJob;
           // The written readout — what was found, at which timestamp, and the
-          // still captured at each flagged moment.
-          await runAnalysis(id);
+          // still captured at each flagged moment. It describes the job's scan;
+          // only if the job produced none does the backend detect for itself.
+          await runAnalysis(id, {
+            scanId: outcome?.ok ? outcome.scanId : null,
+            detector: options.model,
+            queries: options.queries,
+          });
         }
         if (text) await runTurn(id, text);
 

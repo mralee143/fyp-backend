@@ -43,11 +43,27 @@ _PROMPT = (
     "For each event, report when it happens using the video's own timeline "
     "(seconds from the start), and set `category` to \"violence\", \"theft\", "
     "\"harassment\", \"accident\", or \"other\".\n\n"
+    "REPORT EACH EVENT EXACTLY ONCE. One continuous incident is one segment, "
+    "however long it runs and however many stages it passes through: an "
+    "argument that becomes a shove and then a punch is a single segment "
+    "spanning the whole thing, not three. Do not emit overlapping segments, do "
+    "not repeat the same event under a second label, and do not split a "
+    "continuous incident at a camera cut or a brief pause. Start a new segment "
+    "only when the action genuinely stops and a separate event begins later.\n\n"
+    "Set `peak_time` to the single second that best shows the event — the "
+    "moment of the punch, the impact, the grab — not the midpoint of the span. "
+    "It must fall between `start_time` and `end_time`; this is the second we "
+    "capture the still image from.\n\n"
     "Harassment is judged from behaviour and context, not objects: look for "
     "one person's unwanted persistence and the other's discomfort or retreat. "
     "Only report it when the visual evidence supports it — if intent is "
     "ambiguous, either lower the confidence or leave it out. Do not infer "
     "events you cannot see.\n\n"
+    "Confidence must reflect what is actually visible: use above 0.8 only when "
+    "the event is unmistakable, and below 0.4 when you are guessing from "
+    "partial or obstructed footage. Ordinary activity — people walking, "
+    "talking, gesturing, playing, embracing, or working — is not an incident. "
+    "When in doubt, report nothing rather than something.\n\n"
     "If nothing above occurs, return an empty segments list and "
     "violence_detected=false."
 )
@@ -77,6 +93,8 @@ _RESPONSE_SCHEMA = {
                     "description": {"type": "string"},
                     "start_time": {"type": "number"},
                     "end_time": {"type": "number"},
+                    # The second the still is captured from — see _PROMPT.
+                    "peak_time": {"type": "number"},
                     "confidence": {"type": "number"},
                 },
                 "required": [
@@ -85,6 +103,7 @@ _RESPONSE_SCHEMA = {
                     "description",
                     "start_time",
                     "end_time",
+                    "peak_time",
                     "confidence",
                 ],
             },
@@ -229,10 +248,35 @@ def detect_violence_llm(video_bytes: bytes, mime_type: str) -> dict:
         logger.error("Failed to parse Gemini response: %s", e)
         raise LlmDetectionError("Could not parse the model's response.") from e
 
-    segments = result.get("segments") or []
+    segments = [_normalise_segment(raw) for raw in (result.get("segments") or [])]
     return {
         "model_id": settings.gemini_model,
         "violence_detected": bool(result.get("violence_detected", bool(segments))),
         "summary": str(result.get("summary", "")),
         "segments": segments,
     }
+
+
+def _normalise_segment(raw: dict) -> dict:
+    """Rename `peak_time` to the pipeline's `peak_second` and keep it in range.
+
+    The model is asked for the moment worth showing, but nothing stops it
+    returning one outside the span it just reported — and that second is what
+    the cover frame is captured at, so an out-of-range value would illustrate
+    the incident with a frame from somewhere else entirely.
+    """
+    segment = dict(raw)
+    start = float(segment.get("start_time") or 0.0)
+    end = float(segment.get("end_time") or start)
+    if end < start:
+        start, end = end, start
+        segment["start_time"], segment["end_time"] = start, end
+
+    peak = segment.pop("peak_time", None)
+    try:
+        peak = float(peak)
+    except (TypeError, ValueError):
+        peak = start + (end - start) / 2
+
+    segment["peak_second"] = round(min(max(peak, start), end), 2)
+    return segment

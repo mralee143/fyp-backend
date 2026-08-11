@@ -32,6 +32,7 @@ from prisma import Prisma
 from middleware.auth import get_current_user
 from routes.detection import ALLOWED_VIDEO_EXTENSIONS, MAX_VIDEO_SIZE_BYTES
 from agentic.schemas import (
+    ChatAnalyzeIn,
     ChatHealthResponse,
     ChatMessageIn,
     ChatSessionDetail,
@@ -41,7 +42,13 @@ from agentic.schemas import (
 )
 from schemas.user import UserOut
 from agentic import chat_agent, chat_store, qwen_chat
-from agentic.agent_tools import AgentContext, analyze_and_store, summarize_result
+from agentic.agent_tools import (
+    DETECTORS,
+    AgentContext,
+    analyze_and_store,
+    read_stored_scan,
+    summarize_result,
+)
 from services.database import get_prisma
 from services.job_launcher import queue_job_from_path
 
@@ -222,16 +229,21 @@ async def attach_chat_video(
 @router.post("/sessions/{session_id}/analyze", response_model=ChatTurnResponse)
 async def analyze_chat_video(
     session_id: int,
+    payload: Optional[ChatAnalyzeIn] = None,
     current_user: UserOut = Depends(get_current_user),
     prisma: Prisma = Depends(get_prisma),
 ) -> ChatTurnResponse:
-    """Run detection on the attached video immediately and store the findings.
+    """Write the attached video's findings into the conversation.
 
-    This is the auto-analyse-on-attach path: the frontend calls it right after a
-    successful upload, so the user sees an incident summary without having to ask.
-    It runs the detectors directly (no Qwen dependency); the tool card + summary
-    are persisted to the conversation, and the chart/DB agent can answer
-    follow-up questions about the stored scan.
+    One upload is analysed exactly once. Normally the streamed job queued by
+    ``attach_chat_video`` does that work, and the frontend passes back the
+    ``scan_id`` it produced — this endpoint then only turns those stored rows
+    into the tool card and the written summary.
+
+    Detection runs here only as a fallback: no ``scan_id`` (no worker picked the
+    job up, or it failed), in which case the detectors run inline with the model
+    the user chose. Either way the tool card + summary are persisted to the
+    conversation, so the chat/DB agent can answer follow-ups about the scan.
     """
     session = await _require_session(prisma, current_user.id, session_id)
     if not session.get("video_path"):
@@ -240,9 +252,31 @@ async def analyze_chat_video(
             detail="Attach a video before analysing.",
         )
 
+    payload = payload or ChatAnalyzeIn()
     ctx = AgentContext(prisma=prisma, user_id=current_user.id, session=session)
-    result = await analyze_and_store(ctx, "auto")
+
+    result = None
+    if payload.scan_id:
+        result = await read_stored_scan(ctx, payload.scan_id)
+        if result is None:
+            logger.warning(
+                "chat session %s: scan %s not readable, analysing inline instead",
+                session_id,
+                payload.scan_id,
+            )
+
+    if result is None:
+        # The chat's own detectors don't cover every code the pipeline offers
+        # (Gemini has no inline path), so anything unknown falls back to the
+        # auto cascade rather than erroring.
+        detector = (payload.detector or "auto").lower().strip()
+        if detector not in DETECTORS:
+            detector = "auto"
+        args = {"queries": payload.queries} if payload.queries else None
+        result = await analyze_and_store(ctx, detector, args)
+
     reply = summarize_result(result)
+    arguments = {"detector": result.get("detector") or "auto"}
 
     await chat_store.add_message(
         prisma,
@@ -250,7 +284,7 @@ async def analyze_chat_video(
         "tool",
         content="analyze_video",
         tool_name="analyze_video",
-        tool_payload={"arguments": {"detector": "auto"}, "result": result},
+        tool_payload={"arguments": arguments, "result": result},
     )
     await chat_store.add_message(prisma, session_id, "assistant", reply)
     await chat_store.touch_session(prisma, session_id)
@@ -259,7 +293,7 @@ async def analyze_chat_video(
         {
             "reply": reply,
             "tool_calls": [
-                {"name": "analyze_video", "arguments": {"detector": "auto"}, "result": result}
+                {"name": "analyze_video", "arguments": arguments, "result": result}
             ],
             "scan_id": result.get("scan_id"),
         }

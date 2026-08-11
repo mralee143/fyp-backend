@@ -21,6 +21,12 @@ export interface TimelineIncident {
   key: number;
   start: number;
   end: number;
+  /**
+   * The one second the incident reads on. A band says "somewhere in here"; this
+   * says "here" — it is the second the cover still was captured at, so the mark
+   * and the picture agree. Omitted on scans that only recorded a span.
+   */
+  peak?: number | null;
   label: string;
   category: string;
   confidence: number;
@@ -96,8 +102,11 @@ export function IncidentTimeline({
         </span>
         {hovered && (
           <span className="font-mono text-foreground">
-            {hovered.label} · {formatTime(hovered.start)}–{formatTime(hovered.end)} ·{" "}
-            {(hovered.confidence * 100).toFixed(0)}%
+            {hovered.label} · {formatTime(hovered.start)}–{formatTime(hovered.end)}
+            {hovered.peak != null && (
+              <span className="text-red-600"> · at {formatTime(hovered.peak)}</span>
+            )}{" "}
+            · {(hovered.confidence * 100).toFixed(0)}%
           </span>
         )}
       </div>
@@ -141,6 +150,19 @@ export function IncidentTimeline({
             />
           );
         })}
+
+        {/* The exact moment, on top of the bands. A five-second span tells an
+            operator roughly where to look; this tells them where to stop. */}
+        {incidents.map((incident) =>
+          incident.peak == null ? null : (
+            <div
+              key={`peak-${incident.key}`}
+              aria-hidden
+              style={{ left: `${percent(incident.peak)}%` }}
+              className="pointer-events-none absolute inset-y-0 -ml-px w-0.5 bg-red-600 shadow-[0_0_4px_1px_rgba(220,38,38,0.9)]"
+            />
+          )
+        )}
 
         {currentTime > 0 && (
           <div

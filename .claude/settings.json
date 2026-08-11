@@ -22,7 +22,13 @@
       "Bash(echo \"backend :8010 -> $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:8010/ 2>&1\\)\")",
       "Bash(echo \"frontend:3000 -> $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 2>&1 || echo down\\)\")",
       "Bash(env/Scripts/python.exe -)",
-      "Bash(echo \"backend :8010 -> $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:8010/\\)\")"
+      "Bash(echo \"backend :8010 -> $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:8010/\\)\")",
+      "Bash(cd /e/fyp_backend *)",
+      "Bash(echo \"frontend :3000 -> $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 2>&1 || echo DOWN\\)\")",
+      "Bash(SMTP_USER=\"\" SMTP_PASSWORD=\"\" env/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8011)"
+    ],
+    "additionalDirectories": [
+      "E:\\fyp_backend"
     ]
   }
 }

@@ -39,20 +39,30 @@ logger = logging.getLogger(__name__)
 MIN_USABLE_FRAMES = 3
 
 
-def incident_frame_seconds(start: float, end: float, count: int) -> list[float]:
-    """Offsets to sample across one incident, midpoint first.
+def incident_frame_seconds(
+    start: float, end: float, count: int, peak: Optional[float] = None
+) -> list[float]:
+    """Offsets to sample across one incident, the representative second first.
 
-    The midpoint leads because a single-cover consumer should get the
-    representative still, not the opening one. The rest spread evenly and
-    exclude the exact edges, where a seek can land on the neighbouring shot.
+    The lead frame is the cover: it is what the report card, the chat and the
+    dashboard all show when they show one picture. That should be the moment the
+    event actually reads — the punch, the impact — which is what `peak` carries
+    when the backend reported one. Without a peak the midpoint is the best
+    available guess, and on a span that only got long by merging it can easily
+    be the lull between two blows, which is why the peak is worth threading
+    through from the model.
+
+    The rest spread evenly and exclude the exact edges, where a seek can land on
+    the neighbouring shot.
     """
     start, end = float(start), max(float(end), float(start))
     midpoint = round(start + (end - start) / 2, 2)
+    cover = midpoint if peak is None else round(min(max(float(peak), start), end), 2)
     if count <= 1 or end <= start:
-        return [midpoint]
+        return [cover]
 
     span = end - start
-    seconds = [midpoint]
+    seconds = [cover]
     for index in range(count - 1):
         # count-1 points at the centres of equal slices, so nothing sits on an
         # edge frame.
@@ -140,7 +150,10 @@ async def ensure_incident_frames(prisma: Any, video: Any, segment: Any) -> list[
     wanted = [
         second
         for second in incident_frame_seconds(
-            segment.startTime, segment.endTime, settings.incident_frame_count
+            segment.startTime,
+            segment.endTime,
+            settings.incident_frame_count,
+            getattr(segment, "peakSecond", None),
         )
         if all(abs(second - already) > 0.15 for already in captured)
     ]

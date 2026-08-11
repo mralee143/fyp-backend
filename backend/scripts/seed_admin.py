@@ -6,6 +6,12 @@ password, active and email-verified. Run:  python seed_admin.py
 """
 
 import asyncio
+import sys
+from pathlib import Path
+
+# Running this file directly puts scripts/ on sys.path, not backend/. Add the
+# latter so `config` and `services` resolve. Must precede those imports.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from prisma import Prisma
 

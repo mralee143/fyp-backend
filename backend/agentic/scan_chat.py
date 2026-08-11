@@ -137,10 +137,17 @@ def _render_evidence(context: dict, attached: list) -> str:
         for segment in segments:
             label = segment.label.name if segment.label else "Incident"
             category = segment.category.code if segment.category else "other"
+            # The peak is what the cover still was captured at, so naming it
+            # here keeps the prose and the picture pointing at the same second.
+            peak = (
+                f" peaking at {_format_time(segment.peakSecond)}"
+                if segment.peakSecond is not None
+                else ""
+            )
             lines.append(
                 f"[ordinal {segment.ordinal}] {label} ({category}) "
-                f"{_format_time(segment.startTime)}–{_format_time(segment.endTime)} "
-                f"confidence {segment.confidence:.0%}"
+                f"{_format_time(segment.startTime)}–{_format_time(segment.endTime)}"
+                f"{peak} confidence {segment.confidence:.0%}"
             )
             if segment.description:
                 lines.append(f"    what happens: {segment.description}")
@@ -675,8 +682,16 @@ def _render_segment_evidence(context: dict, stills: list[dict]) -> str:
         f"Flagged span: {_format_time(segment.startTime)}–{_format_time(segment.endTime)} "
         f"({duration:.2f}s long)",
         f"Confidence: {segment.confidence:.0%}",
-        f"Detected by: {scan.model.displayName if scan.model else 'unknown model'}",
     ]
+    if segment.peakSecond is not None:
+        # Where the model actually pointed, and where the cover still came from.
+        lines.append(
+            f"Peak moment: {_format_time(segment.peakSecond)} — the second this "
+            "incident reads on, and where the lead still below was captured"
+        )
+    lines.append(
+        f"Detected by: {scan.model.displayName if scan.model else 'unknown model'}"
+    )
     if segment.description:
         lines.append(f"Pipeline description: {segment.description}")
     if segment.explanation:

@@ -41,6 +41,11 @@ export interface ViolenceSegment {
   description: string;
   start_time: number;
   end_time: number;
+  /**
+   * The single second the incident reads on — the moment the model pointed at,
+   * not the middle of the span. Null on scans analysed before it was recorded.
+   */
+  peak_second?: number | null;
   confidence: number;
   clip_url?: string | null;
   annotated_clip_url?: string | null;

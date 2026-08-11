@@ -41,6 +41,13 @@ class ViolenceSegment(BaseModel):
     description: str = Field(description="What happens in this segment.")
     start_time: float = Field(description="Start time in seconds from video start.")
     end_time: float = Field(description="End time in seconds from video start.")
+    peak_second: float | None = Field(
+        default=None,
+        description=(
+            "The single second that best shows the event — where the cover "
+            "still is captured and the timeline draws its marker."
+        ),
+    )
     confidence: float = Field(description="Model confidence in [0, 1].")
     clip_url: str | None = Field(
         default=None, description="URL of the extracted incident clip, if available."

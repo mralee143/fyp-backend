@@ -36,6 +36,8 @@ function catClasses(category: string): string {
 interface Moment {
   start: number;
   end: number;
+  /** The one second the incident reads on, when the scan recorded it. */
+  peak?: number | null;
   label: string;
   category: string;
   text: string;
@@ -101,6 +103,7 @@ export default function ReportPage() {
     ? segments.map((s) => ({
         start: s.start_time,
         end: s.end_time,
+        peak: s.peak_second,
         label: s.label,
         category: s.category || "violence",
         text: s.explanation || s.description,
@@ -191,6 +194,7 @@ export default function ReportPage() {
               key: m.ordinal ?? i,
               start: m.start,
               end: m.end,
+              peak: m.peak,
               label: m.label,
               category: m.category,
               confidence: m.confidence,

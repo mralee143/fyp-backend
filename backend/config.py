@@ -7,6 +7,7 @@ environment variables and validating them using Pydantic.
 
 from pathlib import Path
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
@@ -16,6 +17,14 @@ from pydantic import Field
 # than the cwd so the API, the ARQ worker and scripts/ all read the same file
 # no matter where they are launched from.
 ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+
+# Also push it into the real environment. Pydantic reads the file itself, but
+# Prisma does not: the generated client resolves `env("DATABASE_URL")` through
+# os.environ, and its own .env discovery only looks at the working directory —
+# which is `backend/`, not where the file lives. Without this, importing the app
+# succeeds and the first query fails with "Environment variable not found".
+# override=False, so a real env var (Docker, CI) always wins over the file.
+load_dotenv(ENV_FILE, override=False)
 
 
 class Settings(BaseSettings):
@@ -162,6 +171,27 @@ class Settings(BaseSettings):
             "Stills captured across each flagged incident, so the chat agent can "
             "name the exact frame the incident peaks on"
         ),
+    )
+    # Incident consolidation — see services/incident_merge.py. Models routinely
+    # describe one event as several overlapping segments; these decide when two
+    # rows are folded into one and how weak a row may be before it is dropped.
+    incident_merge_gap_seconds: float = Field(
+        default=2.0,
+        description=(
+            "Quiet seconds two same-category detections may be apart and still "
+            "be reported as one incident"
+        ),
+    )
+    incident_min_confidence: float = Field(
+        default=0.35,
+        description=(
+            "Detections below this confidence are dropped, unless that would "
+            "empty a positive result"
+        ),
+    )
+    max_incidents_per_scan: int = Field(
+        default=8,
+        description="Ceiling on incidents reported for one video, most confident first",
     )
     job_max_tries: int = Field(default=2, description="ARQ retries per analysis job")
     job_timeout_seconds: int = Field(

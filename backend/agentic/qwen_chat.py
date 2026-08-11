@@ -59,6 +59,17 @@ _SCRUB_RES = (
     re.compile(r"```(?:json|tool_call|python)?\s*\{.*?\}\s*```", re.S),
 )
 _BLANK_RUN_RE = re.compile(r"\n{3,}")
+# Frames and clips are rendered by the UI, from real paths the tools returned.
+# A link in the prose is therefore always one the model invented — small models
+# reliably offer "![](https://media.example.com/media/frames/....jpg)" — and it
+# either 404s or leaks raw markdown into the transcript. Images go entirely,
+# links keep their text, and the URL alone is dropped where it stands.
+_LINK_SCRUB_RES = (
+    (re.compile(r"!\[[^\]]*\]\([^)]*\)"), ""),
+    (re.compile(r"\[([^\]]*)\]\([^)]*\)"), r"\1"),
+    (re.compile(r"\(\s*<?https?://[^)]*>?\s*\)"), ""),
+    (re.compile(r"<?https?://\S+>?"), ""),
+)
 
 
 class QwenChatError(Exception):
@@ -206,13 +217,16 @@ def scrub_tool_syntax(text: str, tool_names: Iterable[str] = ()) -> str:
 
     Weaker models leak their plumbing into the prose — a stray `<tool_call>`
     tag, a `[control_video_playback action="seek" ...]` pseudo-call, a fenced
-    JSON arguments blob. The user should never see any of it, so anything that
-    survived parsing gets removed before the reply is shown or stored.
+    JSON arguments blob, a made-up link to the frame they were shown. The user
+    should never see any of it, so anything that survived parsing gets removed
+    before the reply is shown or stored.
     """
     for span, _ in reversed(_bracket_matches(text, tool_names)):
         text = text[: span[0]] + text[span[1] :]
     for pattern in _SCRUB_RES:
         text = pattern.sub("", text)
+    for pattern, replacement in _LINK_SCRUB_RES:
+        text = pattern.sub(replacement, text)
     return _BLANK_RUN_RE.sub("\n\n", text).strip()
 
 

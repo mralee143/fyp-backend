@@ -94,6 +94,7 @@ async def build_payload(prisma: Any, event: Any, job: Any) -> dict:
                 "explanation": segment.explanation,
                 "start_time": segment.startTime,
                 "end_time": segment.endTime,
+                "peak_second": segment.peakSecond,
                 "confidence": segment.confidence,
                 "clip_url": await media_store.resolve_media_url(segment.clipObjectKey),
                 "annotated_clip_url": await media_store.resolve_media_url(

@@ -260,6 +260,11 @@ model Segment {
   explanation            String?
   startTime              Float   @map("start_time")
   endTime                Float   @map("end_time")
+  /// The single second that best shows the event — where the cover still is
+  /// captured from, and where the timeline draws its marker. Nullable because
+  /// scans written before this column have only a span to go on, and a
+  /// backfilled midpoint would be a guess wearing a measurement's clothes.
+  peakSecond             Float?  @map("peak_second")
   confidence             Float
   clipObjectKey          String? @map("clip_object_key")
   annotatedClipObjectKey String? @map("annotated_clip_object_key")

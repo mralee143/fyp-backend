@@ -47,6 +47,9 @@ async def _segment_dict(segment: Any) -> dict:
         "explanation": segment.explanation,
         "start_time": segment.startTime,
         "end_time": segment.endTime,
+        # Where the timeline draws its marker and the cover still was taken —
+        # None on scans predating the column, which the UI reads as "span only".
+        "peak_second": segment.peakSecond,
         "confidence": segment.confidence,
         "clip_url": await media_store.resolve_media_url(segment.clipObjectKey),
         "annotated_clip_url": await media_store.resolve_media_url(
