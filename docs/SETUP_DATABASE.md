@@ -125,14 +125,16 @@ This guide will help you set up PostgreSQL for the FastAPI authentication applic
 After setting up PostgreSQL, verify the connection:
 
 ```bash
-python test_db_connection.py
+cd backend
+pytest tests/test_db_connection.py
 ```
 
-This script will test the database connection and confirm everything is working.
+This test will check the database connection and confirm everything is working.
 
 ## Next Steps
 
-Once the database is set up and verified:
+Once the database is set up and verified — all from `backend/`, which is where
+`prisma/schema.prisma` and `main.py` live:
 
 1. **Generate Prisma Client**
    ```bash

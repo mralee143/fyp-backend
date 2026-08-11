@@ -43,6 +43,26 @@ export async function resendOtp(email: string) {
   return data;
 }
 
+/** Request a password-reset code (POST /auth/forgot-password). */
+export async function forgotPassword(email: string) {
+  const { data } = await api.post("/auth/forgot-password", { email });
+  return data;
+}
+
+/** Set a new password with the emailed code (POST /auth/reset-password). */
+export async function resetPassword(
+  email: string,
+  code: string,
+  newPassword: string
+) {
+  const { data } = await api.post("/auth/reset-password", {
+    email,
+    code,
+    new_password: newPassword,
+  });
+  return data;
+}
+
 /** Clear the local session. */
 export function logout() {
   useAuthStore.getState().clearAuth();

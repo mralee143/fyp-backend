@@ -1,0 +1,161 @@
+---
+title: SentinelAI — Video Threat Detection Platform
+---
+flowchart TB
+
+%% ===================================================================
+%%  BROWSER
+%% ===================================================================
+subgraph BROWSER["🌐 Browser — Next.js 15 / React"]
+  direction TB
+  UI_AUTH["Auth pages<br/>login · signup · verify · reset"]
+  UI_APP["App pages<br/>dashboard · analyze · results<br/>report · chat · admin"]
+  UI_LIB["lib clients<br/>api · auth · detection · jobs<br/>chat · scan-chat · admin"]
+  UI_LIVE["live-analysis<br/>EventSource / SSE reader"]
+
+  UI_AUTH --> UI_LIB
+  UI_APP  --> UI_LIB
+  UI_APP  --> UI_LIVE
+end
+
+%% ===================================================================
+%%  API
+%% ===================================================================
+subgraph API["⚙️ FastAPI — main.py &nbsp;·&nbsp; :8000"]
+  direction TB
+
+  MW["CORS + JWT bearer middleware<br/>middleware/auth.py"]
+
+  subgraph ROUTES["routes/"]
+    direction LR
+    R_AUTH["auth<br/>signup · verify-otp · login<br/>forgot / reset password"]
+    R_USER["users · images"]
+    R_DET["detection<br/>/video /llm /qwen /action /auto<br/>stats · history · scan"]
+    R_JOBS["jobs<br/>POST · GET · /frames<br/>/events SSE · /retry"]
+    R_CHAT["chat<br/>sessions · video · analyze · messages"]
+    R_SCHAT["scan_chat<br/>per-scan questions · explain incident"]
+    R_ADMIN["admin<br/>stats · users · scans · analytics"]
+    R_HOOK["webhooks<br/>endpoints · subscriptions · deliveries"]
+  end
+
+  subgraph SVC["services/"]
+    direction LR
+    S_CORE["auth · otp · email<br/>database · cache"]
+    S_STORE["media_store · minio_client<br/>scan_writer · scan_store · scan_repository"]
+    S_JOB["queue · job_launcher<br/>events"]
+    S_MEDIA["frame_extract · clip_extract<br/>annotate · incident_frames · image_utils"]
+    S_AGENT["chat_agent · agent_tools<br/>db_agent · qwen_chat · scan_chat · explain"]
+    S_HOOK["webhooks"]
+  end
+
+  MW --> ROUTES --> SVC
+end
+
+%% ===================================================================
+%%  WORKER
+%% ===================================================================
+subgraph WORKER["🔧 ARQ Worker — worker.py"]
+  direction TB
+  W_FLOW["analyze_video task<br/>0-5% download + probe<br/>5-30% sample frames → store → frame.ready<br/>30-70% run detection backend<br/>70-90% clip + annotate → segment.ready<br/>90-100% caption → job.completed"]
+  W_RUN["detection_runner.run_detection<br/>one entry point for every backend<br/>asyncio.to_thread per inference"]
+  W_AUTO{{"model = auto?<br/>cascade, first hit wins"}}
+
+  W_FLOW --> W_RUN --> W_AUTO
+end
+
+%% ===================================================================
+%%  DETECTION BACKENDS
+%% ===================================================================
+subgraph MODELS["🧠 Detection Backends"]
+  direction TB
+  M_YOLO["YOLOv8n — yolo_detection<br/>fixed classes: Gun · Knife<br/>Explosive · Grenade"]
+  M_OWL["OWLv2 — video_detection<br/>zero-shot, free-text queries"]
+  M_VIOL["VideoMAE violence — violence_detection<br/>binary sliding window"]
+  M_ACT["VideoMAE UCF-Crime — action_detection<br/>Fighting · Assault · Robbery · Shooting"]
+  M_QWEN["Qwen2.5-VL — qwen_detection<br/>subprocess into qwen_env venv"]
+  M_LLM["Gemini VLM — llm_detection<br/>Files API + structured segments"]
+end
+
+%% ===================================================================
+%%  DATA
+%% ===================================================================
+subgraph DATA["💾 Stateful Services"]
+  direction LR
+  PG[("PostgreSQL 14<br/>via Prisma<br/><br/>User · Video · AnalysisJob<br/>Scan · Segment · Detection · Image<br/>ChatSession/Message/Citation<br/>JobEvent · Webhook*")]
+  REDIS[("Redis 7<br/>ARQ queue<br/>response cache<br/>SSE pub/sub")]
+  MINIO[("MinIO S3<br/>videos · frames · clips<br/>presigned URLs")]
+end
+
+%% ===================================================================
+%%  EXTERNAL
+%% ===================================================================
+subgraph EXT["☁️ External"]
+  direction LR
+  GEMINI(["Google Gemini API<br/>generativelanguage.googleapis.com"])
+  SMTP(["SMTP / Gmail<br/>OTP + password reset"])
+  HF(["Hugging Face Hub<br/>model weights, cached"])
+  HOOKS(["Customer webhook endpoints<br/>HMAC-signed POST"])
+end
+
+%% ===================================================================
+%%  EDGES
+%% ===================================================================
+
+%% browser → api
+UI_LIB  -- "REST + JWT" --> MW
+UI_LIVE -. "SSE: job.progress · frame.ready<br/>segment.ready · job.completed" .-> R_JOBS
+UI_APP  -. "presigned GET<br/>frames · clips · video" .-> MINIO
+
+%% api → data
+S_CORE  --> PG
+S_STORE --> PG
+S_STORE --> MINIO
+S_JOB   --> REDIS
+S_CORE  --> REDIS
+S_CORE  --> SMTP
+
+%% enqueue → worker
+R_JOBS -- "202 Accepted<br/>enqueue job" --> S_JOB
+S_JOB  == "ARQ enqueue" ==> REDIS
+REDIS  == "dequeue" ==> W_FLOW
+
+%% worker → data
+W_FLOW --> PG
+W_FLOW --> MINIO
+W_FLOW -- "events.emit → publish" --> REDIS
+REDIS  -. "pub/sub fan-out" .-> R_JOBS
+W_FLOW --> S_HOOK --> HOOKS
+
+%% worker → models
+W_RUN  --> M_YOLO & M_OWL & M_VIOL & M_ACT & M_QWEN & M_LLM
+W_AUTO -. "1️⃣" .-> M_LLM
+W_AUTO -. "2️⃣" .-> M_VIOL
+W_AUTO -. "3️⃣ ≥0.85" .-> M_ACT
+
+%% models → external
+M_LLM --> GEMINI
+M_YOLO & M_OWL & M_VIOL & M_ACT --> HF
+
+%% chat agent
+S_AGENT -- "orchestrator turn" --> QWENC["Qwen chat<br/>tool-calling loop, max 4 rounds"]
+QWENC -- "analyze_video" --> W_RUN
+QWENC -- "query_detection_database" --> DBA["db_agent<br/>NL → read-only SQL"]
+DBA --> PG
+QWENC -- "control_playback · show_frame<br/>list_recent_scans · get_scan_report" --> PG
+
+%% ===================================================================
+%%  STYLE
+%% ===================================================================
+classDef browser fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a5f
+classDef api     fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
+classDef worker  fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#713f12
+classDef model   fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#3b0764
+classDef store   fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
+classDef ext     fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+
+class UI_AUTH,UI_APP,UI_LIB,UI_LIVE browser
+class MW,R_AUTH,R_USER,R_DET,R_JOBS,R_CHAT,R_SCHAT,R_ADMIN,R_HOOK,S_CORE,S_STORE,S_JOB,S_MEDIA,S_AGENT,S_HOOK api
+class W_FLOW,W_RUN,W_AUTO,QWENC,DBA worker
+class M_YOLO,M_OWL,M_VIOL,M_ACT,M_QWEN,M_LLM model
+class PG,REDIS,MINIO store
+class GEMINI,SMTP,HF,HOOKS ext

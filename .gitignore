@@ -1,5 +1,10 @@
-# Environment variables
+# Environment variables. `.env.*` covers .env.production, which holds the
+# production SECRET_KEY and the Docker Hub push token — never commit those.
+# The *.example files carry the same keys with placeholder values.
 .env
+.env.*
+!.env.example
+!.env.production.example
 
 # Kiro configuration
 .kiro
@@ -65,5 +70,6 @@ Thumbs.db
 # Generated / local artifacts
 report.json
 
-# Extracted incident clips
-/media/
+# Extracted incident clips (written by the worker, served at /media)
+/backend/media/
+mcpmarket-plugin-me/*

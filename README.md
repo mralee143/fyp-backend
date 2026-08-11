@@ -31,51 +31,111 @@ A modern user authentication system built with FastAPI and Prisma ORM, providing
 
 ## Project Structure
 
+Three top-level areas: the API, the UI, and the LLM agents that sit on top of
+both. `backend/` is the working directory the API and the worker run from — its
+subpackages import each other as `services.x`, `agentic.x`, `ml.x`.
+
 ```
-├── main.py                  # Application entry point with lifespan management
-├── config.py                # Configuration management with Pydantic Settings
-├── test_integration_startup.py # Quick MinIO integration verification script
-├── prisma/
-│   └── schema.prisma       # Database schema definition
-├── routes/
-│   ├── auth.py             # Authentication endpoints (signup, login)
-│   ├── users.py            # User management endpoints (profile)
-│   └── images.py           # Image upload/retrieval endpoints
-├── schemas/
-│   ├── user.py             # User-related Pydantic schemas
-│   ├── auth.py             # Auth-related Pydantic schemas
-│   └── image.py            # Image-related Pydantic schemas
-├── services/
-│   ├── auth.py             # Password hashing and JWT token logic
-│   ├── database.py         # Prisma client management
-│   ├── image_utils.py      # Image validation and filename utilities
-│   └── minio_client.py     # MinIO client for object storage
-├── middleware/
-│   └── auth.py             # JWT authentication middleware
-├── tests/
-    ├── conftest.py                        # Shared test fixtures
-    ├── test_api_documentation.py          # API documentation endpoint tests
-    ├── test_config_properties.py          # Configuration validation tests
-    ├── test_email_validation_properties.py # Email format validation tests
-    ├── test_jwt_properties.py             # JWT token tests
-    ├── test_password_hashing_properties.py # Password hashing tests
-    ├── test_user_properties.py            # User model tests
-    ├── test_registration_properties.py    # User registration tests
-    ├── test_login_properties.py           # User login tests
-    ├── test_profile_access_properties.py  # Profile access tests
-    ├── test_sensitive_data_exclusion_properties.py # Sensitive data exclusion tests
-    ├── test_auth_middleware_properties.py # Auth middleware tests
-    ├── test_image_upload_auth_properties.py # Image upload authentication tests
-    ├── test_image_retrieval_properties.py # Image retrieval round-trip tests
-    ├── test_error_handling.py             # Error handling tests
-    ├── test_error_handling_images.py      # Image upload error handling tests
-    └── test_integration.py                # End-to-end integration tests
+├── backend/                    # FastAPI API + ARQ worker (run from here)
+│   ├── main.py                 # App entry point, lifespan, router registration
+│   ├── worker.py               # ARQ worker — the whole video analysis pipeline
+│   ├── config.py               # Pydantic Settings, reads ../.env
+│   ├── routes/                 # HTTP endpoints
+│   │   ├── auth.py             #   signup, login, OTP, password reset
+│   │   ├── users.py            #   profile
+│   │   ├── images.py           #   image upload / retrieval
+│   │   ├── detection.py        #   synchronous detection endpoints
+│   │   ├── jobs.py             #   async analysis jobs + SSE progress stream
+│   │   ├── admin.py            #   admin dashboard data
+│   │   └── webhooks.py         #   outbound webhook management
+│   ├── services/               # Business logic
+│   │   ├── auth.py             #   password hashing, JWT
+│   │   ├── database.py         #   Prisma client management
+│   │   ├── minio_client.py     #   object storage (user images)
+│   │   ├── media_store.py      #   object storage (videos, frames, clips)
+│   │   ├── queue.py            #   ARQ job queue
+│   │   ├── events.py           #   Redis pub/sub feeding the SSE stream
+│   │   ├── cache.py            #   Redis cache
+│   │   ├── scan_*.py           #   scan persistence (repository / writer / store)
+│   │   ├── frame_extract.py    #   frame sampling
+│   │   ├── clip_extract.py     #   incident clip cutting
+│   │   ├── annotate.py         #   box drawing
+│   │   └── *_detection.py      #   YOLO, OWLv2, action, violence, Gemini, Qwen
+│   ├── agentic/                # Everything LLM-driven — see its own section
+│   │   ├── prompts/            #   every system prompt, as editable .md files
+│   │   ├── chat_agent.py       #   the orchestrator the user talks to
+│   │   ├── agent_tools.py      #   tools the orchestrator can call
+│   │   ├── db_agent.py         #   natural language -> read-only SQL
+│   │   ├── scan_chat.py        #   grounded Q&A about one analysed video
+│   │   ├── qwen_chat.py        #   chat completion client
+│   │   ├── chat_store.py       #   conversation persistence
+│   │   ├── schemas.py          #   chat request/response models
+│   │   └── routes/             #   /chat and /detection/scans endpoints
+│   ├── ml/                     # Model code, importable and runnable standalone
+│   │   ├── vid_img.py          #   detection primitives shared by services/
+│   │   └── qwen_infer.py       #   runs inside qwen_env, spawned as a subprocess
+│   ├── schemas/                # Pydantic request/response models
+│   ├── middleware/auth.py      # JWT authentication middleware
+│   ├── prisma/schema.prisma    # Database schema
+│   ├── scripts/                # Host-side one-offs (seeding, migration, manual tests)
+│   ├── docker/                 # Image entrypoint, supervisor, model pre-download
+│   ├── tests/                  # pytest + hypothesis suite
+│   ├── Dockerfile              # Backend image (build context is backend/)
+│   └── requirements.txt
+├── frontend/                   # Next.js UI (its own image and build context)
+│   └── src/
+│       ├── app/(auth)/         #   login, signup, verify, password reset
+│       ├── app/(app)/          #   dashboard, analyze, results, report, chat, admin
+│       ├── components/         #   UI components
+│       ├── lib/                #   API clients
+│       └── store/              #   Zustand stores
+├── docs/                       # Architecture, pipeline and schema notes
+├── docker-compose.yml          # Backend + frontend, plus the split-stack profile
+└── .env                        # Shared config (gitignored; see .env.example)
 ```
+
+### The agents
+
+`backend/agentic/` holds the three LLM agents and nothing else, so the
+model-driven behaviour is separable from the deterministic pipeline:
+
+| Agent | Module | What it does |
+| --- | --- | --- |
+| Orchestrator | `chat_agent.py` | The chatbot. Decides when to call a tool (analyse a video, query the database, drive playback, grab a still). |
+| Database analyst | `db_agent.py` | Turns a plain-English question into one read-only `SELECT` over the user's scans, then explains the rows. |
+| Scan chat | `scan_chat.py` | Answers questions about one specific analysed video, grounded in its summary, incidents and frame images. |
+
+Their prompts live in `backend/agentic/prompts/`, one folder per agent, as plain
+`.md` files loaded at import time:
+
+```
+agentic/prompts/
+├── orchestrator/system.md      # the chatbot's instructions and tool policy
+├── db_agent/
+│   ├── schema.md               # the three relations the SQL agent may query
+│   ├── sql_system.md           # SQL-writing rules ({schema}, {max_rows} template)
+│   └── insight_system.md       # how to explain the returned rows
+└── scan_chat/
+    ├── system.md               # grounded Q&A rules for a whole video
+    └── segment.md              # reading one incident from its strip of stills
+```
+
+Prompt wording is the main lever on answer quality, so it is kept as text rather
+than as a string constant — reword a rule, restart the API, and the agent
+behaves differently without a code change. `prompts.load("db_agent/schema")`
+reads them; paths resolve relative to the package, not the working directory.
 
 ## Setup
 
+> **Run every backend command from `backend/`.** That is the import root for
+> `main.py`, `worker.py` and the `services` / `agentic` / `ml` packages. The
+> venvs (`env`, `qwen_env`) and `.env` stay at the repo root and are shared, so
+> from `backend/` the interpreter is `../env/Scripts/python.exe`.
+> `RUN.md` has the exact commands for this machine.
+
 1. Install dependencies:
 ```bash
+cd backend
 pip install -r requirements.txt
 ```
 
@@ -100,14 +160,18 @@ APP_NAME=Authentication API
 DEBUG=false
 ```
 
-3. Start MinIO (for image upload functionality):
+3. Start the backing services (PostgreSQL, Redis, MinIO):
 ```bash
-docker-compose -f docker-compose.minio.yml up -d
+# From the repo root. These sit behind the "split" compose profile, so a bare
+# `docker compose up -d` skips them and starts the all-in-one backend instead.
+docker compose up -d postgres redis minio
 ```
 
 4. Verify MinIO integration (optional but recommended):
 ```bash
-python test_integration_startup.py
+# The API creates and checks both buckets during startup — watch the log for
+# "MinIO client initialized successfully" and "Media bucket ready".
+curl http://localhost:9000/minio/health/live
 ```
 
 5. Generate Prisma client:
@@ -402,12 +466,12 @@ python test_db_connection.py
 
 ### MinIO Integration Testing
 
-Verify MinIO client initialization and bucket creation:
+Bucket setup runs during application startup, so booting the API is the check:
 ```bash
-python test_integration_startup.py
+cd backend && ../env/Scripts/python.exe -m uvicorn main:app --port 8000
 ```
 
-This script checks:
+The startup log confirms:
 - MinIO client initialization with configured credentials
 - Bucket creation (if it doesn't exist)
 - Bucket existence verification

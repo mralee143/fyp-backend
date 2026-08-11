@@ -31,14 +31,24 @@ export interface DetectOptions {
 
 /** One violence event found by the LLM (mirrors backend ViolenceSegment). */
 export interface ViolenceSegment {
+  /** Set on stored scans; absent on the direct (unsaved) detection routes. */
+  id?: number;
+  /** Position within the scan — how the chat agent addresses one incident. */
+  ordinal?: number;
   label: string;
   /** "violence" | "theft" | "harassment" | "other" — backend may add more. */
   category: string;
   description: string;
   start_time: number;
   end_time: number;
+  /**
+   * The single second the incident reads on — the moment the model pointed at,
+   * not the middle of the span. Null on scans analysed before it was recorded.
+   */
+  peak_second?: number | null;
   confidence: number;
   clip_url?: string | null;
+  annotated_clip_url?: string | null;
   explanation?: string | null;
 }
 
@@ -233,6 +243,31 @@ export async function getHistory(): Promise<ScanHistoryItem[]> {
   return data;
 }
 
+/** One image stored for a scan's video — a sampled frame or an incident still. */
+export interface ScanImage {
+  id: number;
+  kind: "FRAME" | "ANNOTATED_FRAME" | "THUMBNAIL" | "UPLOAD";
+  sequence: number | null;
+  captured_at_seconds: number | null;
+  /** Per-image summary written while the video was processed. */
+  caption: string | null;
+  width: number | null;
+  height: number | null;
+  segment_id: number | null;
+  url: string | null;
+}
+
+/** The analysed video itself — what the report timeline is measured against. */
+export interface ScanVideo {
+  id: number;
+  filename: string;
+  /** Null when the probe failed; the timeline falls back to the last incident. */
+  duration_seconds: number | null;
+  width: number | null;
+  height: number | null;
+  url: string | null;
+}
+
 /** Full detail of one scan, for the report page. */
 export interface ScanDetail {
   id: number;
@@ -241,6 +276,11 @@ export interface ScanDetail {
   violence_detected: boolean;
   summary: string;
   created_at: string;
+  video?: ScanVideo;
+  /** Every frame extracted from the video, newest analysis first. */
+  images?: ScanImage[];
+  /** Labels this scan touched, from the scan_labels join. */
+  labels?: string[];
   result: {
     model_id?: string;
     summary?: string;
