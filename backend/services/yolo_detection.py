@@ -24,7 +24,15 @@ from decord import VideoReader, cpu
 from PIL import Image
 
 # Reuse the pure timestamp helpers and defaults from the CLI.
-from ml.vid_img import HF_TOKEN, format_seconds, frame_to_seconds, sample_frame_indices
+from ml.vid_img import (
+    HF_TOKEN,
+    WEAPON_REPORT_CONFIDENCE,
+    format_seconds,
+    frame_to_seconds,
+    sample_frame_indices,
+    weapon_summary,
+    weapon_verdict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,13 +76,18 @@ def _load_model() -> tuple[Any, str]:
 def detect_weapons_yolo(
     video_path: Path,
     num_frames: int = 24,
-    score_threshold: float = 0.25,
+    score_threshold: float = WEAPON_REPORT_CONFIDENCE,
 ) -> dict[str, Any]:
     """Detect weapons in a video with a fine-tuned YOLOv8 model.
 
     Samples ``num_frames`` evenly across the video and runs YOLO detection on
     each frame, returning every detection above ``score_threshold`` with a
     bounding box, class label, confidence and timestamp.
+
+    ``weapon_detected`` is a separate judgement from the box list: it asks
+    whether the boxes corroborate each other (see ``vid_img.weapon_verdict``)
+    rather than whether any box exists at all, so one weak hit on a ball no
+    longer marks the clip as armed.
 
     Args:
         video_path: Path to a readable video file.
@@ -133,6 +146,14 @@ def detect_weapons_yolo(
     for det in detections:
         label_counts[det["label"]] = label_counts.get(det["label"], 0) + 1
 
+    positive = weapon_verdict(detections)
+    if detections and not positive:
+        logger.info(
+            "yolo: %d box(es) did not corroborate — reporting no weapon (%s)",
+            len(detections),
+            ", ".join(f"{n} x{c}" for n, c in list(label_counts.items())[:4]),
+        )
+
     return {
         "model_id": model_id,
         "queries": [class_names[i] for i in sorted(class_names)],
@@ -140,6 +161,7 @@ def detect_weapons_yolo(
         "frames_scanned": int(indices.size),
         "detection_count": len(detections),
         "label_counts": label_counts,
-        "weapon_detected": len(detections) > 0,
+        "weapon_detected": positive,
+        "summary": weapon_summary(detections, label_counts, positive),
         "detections": detections,
     }

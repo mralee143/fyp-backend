@@ -27,7 +27,11 @@ class VideoDetectionResponse(BaseModel):
     frames_scanned: int
     detection_count: int
     label_counts: dict[str, int]
+    # The verdict, and the box list it was drawn from. These can disagree on
+    # purpose: boxes too weak or too isolated to corroborate each other are
+    # still listed, but do not make `weapon_detected` true.
     weapon_detected: bool
+    summary: str = ""
     detections: list[Detection]
 
 

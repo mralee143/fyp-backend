@@ -27,6 +27,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from agentic import chat_store, db_agent
 from config import settings
+from services.clip_extract import extract_clips_for_segments
 from services.incident_merge import consolidate
 from services.frame_extract import (
     annotate_frame,
@@ -435,9 +436,38 @@ def _focus_segments(result: dict, path: Path) -> dict:
 
 
 def _run_auto(path: Path) -> dict:
-    """Cascade every model and return the first incident found."""
+    """The same cascade the worker runs, so chat and the report agree.
+
+    Two things this deliberately does *not* do, both of which it used to:
+
+      * **Skip Gemini.** It was the one model missing here, which left the chat
+        answering from local classifiers alone — the weakest opinion in the
+        system got the last word on every video the user asked about, and
+        disagreed with the report page on the same clip.
+      * **Fall through to YOLO.** "Did something happen" is a question about
+        behaviour; an object detector answers "what is in frame", and letting
+        it close the cascade meant a stray box decided the verdict. It stays
+        available as an explicit `yolo` detector for when the user asks what
+        objects are visible.
+
+    See `services.detection_runner._run_auto` for why Gemini's answer is final
+    rather than one vote among several.
+    """
     from services.action_detection import detect_actions
+    from services.detection_runner import VIDEO_MIME
+    from services.llm_detection import detect_violence_llm
     from services.violence_detection import detect_violence
+
+    try:
+        mime = VIDEO_MIME.get(path.suffix.lower(), "video/mp4")
+        result = detect_violence_llm(video_bytes=path.read_bytes(), mime_type=mime)
+        logger.info(
+            "agent auto: Gemini answered (violence_detected=%s) — taking it as final",
+            bool(result.get("violence_detected")),
+        )
+        return result
+    except Exception as e:
+        logger.info("agent auto: Gemini skipped (%s)", str(e)[:120])
 
     clear: Optional[dict] = None
     for label, run in (
@@ -448,14 +478,13 @@ def _run_auto(path: Path) -> dict:
                 video_path=path, window_seconds=3, stride_seconds=2, threshold=0.85
             ),
         ),
-        ("yolo", lambda: _run_detector("yolo", path, {})),
     ):
         try:
             result = run()
         except Exception as e:
             logger.info("agent auto: %s skipped (%s)", label, str(e)[:120])
             continue
-        if result.get("violence_detected") or result.get("weapon_detected"):
+        if result.get("violence_detected"):
             return result
         clear = clear or result
 
@@ -559,6 +588,18 @@ async def _tool_analyze_video(ctx: AgentContext, args: dict[str, Any]) -> dict:
         return {"error": f"The {detector} detector failed: {str(e)[:200]}"}
 
     result = await run_in_threadpool(_focus_segments, result, path)
+
+    # Cut each incident out before saving, so the report page for this scan has
+    # the clip to play. The worker does this for queued jobs; a scan run from
+    # the chat used to be saved with the timings alone, which is why its report
+    # showed a flagged section you could read but not watch.
+    if result.get("segments"):
+        try:
+            await run_in_threadpool(
+                extract_clips_for_segments, str(path), result["segments"]
+            )
+        except Exception as e:  # clips are a bonus — never lose the analysis
+            logger.warning("agent: clip extraction failed: %s", e)
 
     scan_id = await save_scan(
         ctx.prisma, ctx.user_id, ctx.video_name or path.name, detector, result

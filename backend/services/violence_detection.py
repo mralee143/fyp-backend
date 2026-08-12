@@ -30,6 +30,16 @@ _NONVIOLENT = {"nonviolence", "normal", "neutral", "noviolence"}
 # windows — see `vid_img.prune_to_peak`.
 VIOLENCE_PEAK_MARGIN = float(os.getenv("VIOLENCE_PEAK_MARGIN", "0.05"))
 
+# A binary head always returns one of its two classes, so on footage unlike
+# anything it was trained on it does not abstain — it picks "violence" and
+# reports whatever softmax it got. Sport is the worst case: fast bodies, a
+# ball, sudden contact, exactly the low-level motion the violent class was fit
+# to. Those guesses land in the 0.6-0.8 band, while a real fight sits at 0.9+,
+# so the bar is set where genuine incidents are and guesses are not. This is
+# the same 0.85 the cascade already holds the action model to, for the same
+# reason.
+VIOLENCE_THRESHOLD = float(os.getenv("VIOLENCE_THRESHOLD", "0.85"))
+
 _model: Any = None
 _proc: Any = None
 
@@ -116,7 +126,7 @@ def detect_violence(
     video_path: Path,
     window_seconds: float = 3,
     stride_seconds: float = 2,
-    threshold: float = 0.6,
+    threshold: float = VIOLENCE_THRESHOLD,
 ) -> dict[str, Any]:
     """Detect violent segments in a video. Returns the LlmDetectionResponse dict."""
     model, proc = _load()

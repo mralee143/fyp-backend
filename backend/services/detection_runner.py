@@ -200,17 +200,28 @@ async def run_detection(
 
 
 async def _run_auto(video_path: Path, progress: ProgressFn) -> dict:
-    """Cascade: Gemini -> violence classifier -> action model, first hit wins.
+    """Cascade: Gemini, then violence classifier -> action model as a fallback.
 
     Each stage is optional — a missing API key, an exhausted quota or an
     unavailable local model just moves the cascade on to the next backend
     instead of failing the job.
+
+    **Gemini decides when it runs.** The stages below it are a fallback for a
+    Gemini that could not answer, not a second opinion on one that did. Taking
+    the first *positive* instead compounded every model's false-positive rate:
+    Gemini would watch a clip of a ball and correctly report nothing, and that
+    verdict was thrown away the moment a downstream classifier — which has no
+    way to abstain, and no idea what it is looking at — guessed "violence".
+    Chaining models that way makes a clear video almost impossible to report,
+    because each stage only ever adds ways to say yes and none to say no.
     """
     detected: Optional[dict] = None
     clear: Optional[dict] = None
 
     # 1) Gemini — best coverage (it is the only backend that reads harassment
-    #    from context) and fast, when the key has quota left.
+    #    from context) and fast, when the key has quota left. It is also the
+    #    only one that actually understands the scene, so its "nothing here" is
+    #    worth as much as its "here it is": both are returned as final.
     await progress(40, "detecting", "Asking Gemini to watch the video…")
     try:
         mime = VIDEO_MIME.get(video_path.suffix.lower(), "video/mp4")
@@ -218,10 +229,11 @@ async def _run_auto(video_path: Path, progress: ProgressFn) -> dict:
         result = await asyncio.to_thread(
             detect_violence_llm, video_bytes=video_bytes, mime_type=mime
         )
-        if result.get("violence_detected"):
-            detected = result
-        else:
-            clear = result
+        logger.info(
+            "auto: Gemini answered (violence_detected=%s) — taking it as final",
+            bool(result.get("violence_detected")),
+        )
+        return result
     except LlmDetectionError as exc:
         logger.info("auto: Gemini skipped (%s)", str(exc)[:120])
     except Exception as exc:

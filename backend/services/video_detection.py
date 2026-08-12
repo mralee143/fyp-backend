@@ -20,9 +20,12 @@ from ml.vid_img import (
     DEFAULT_OBJECT_QUERIES,
     HF_TOKEN,
     OBJECT_MODEL_ID,
+    WEAPON_REPORT_CONFIDENCE,
     format_seconds,
     frame_to_seconds,
     sample_frame_indices,
+    weapon_summary,
+    weapon_verdict,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,7 +54,7 @@ def detect_weapons(
     video_path: Path,
     queries: Sequence[str] = DEFAULT_OBJECT_QUERIES,
     num_frames: int = 24,
-    score_threshold: float = 0.2,
+    score_threshold: float = WEAPON_REPORT_CONFIDENCE,
     model_id: str = OBJECT_MODEL_ID,
 ) -> dict[str, Any]:
     """Scan a video for weapons/objects using OWLv2 zero-shot detection.
@@ -128,6 +131,14 @@ def detect_weapons(
     for det in detections:
         label_counts[det["label"]] = label_counts.get(det["label"], 0) + 1
 
+    positive = weapon_verdict(detections)
+    if detections and not positive:
+        logger.info(
+            "owlv2: %d box(es) did not corroborate — reporting no weapon (%s)",
+            len(detections),
+            ", ".join(f"{n} x{c}" for n, c in list(label_counts.items())[:4]),
+        )
+
     return {
         "model_id": model_id,
         "queries": list(queries),
@@ -135,6 +146,7 @@ def detect_weapons(
         "frames_scanned": int(indices.size),
         "detection_count": len(detections),
         "label_counts": label_counts,
-        "weapon_detected": len(detections) > 0,
+        "weapon_detected": positive,
+        "summary": weapon_summary(detections, label_counts, positive),
         "detections": detections,
     }
