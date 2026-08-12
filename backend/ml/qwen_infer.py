@@ -22,7 +22,10 @@ from transformers import (
 )
 from qwen_vl_utils import process_vision_info
 
-MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct"
+# Overridable so the Docker build can bake a smaller checkpoint: the 7B weights
+# are 16.6 GB, the 3B 7.5 GB. Whatever is set here must match the model the
+# image cached at build time, or the first run will try to download it.
+MODEL_ID = os.getenv("QWEN_VL_MODEL_ID", "Qwen/Qwen2.5-VL-7B-Instruct")
 SENTINEL = "__QWEN_RESULT__"
 
 PROMPT_TMPL = (

@@ -446,12 +446,13 @@ async def detect_video_auto(
     current_user: UserOut = Depends(get_current_user),
     prisma: Prisma = Depends(get_prisma),
 ) -> LlmDetectionResponse:
-    """Run ALL detection models in a cascade and return the first hit.
+    """Analyse a video with Gemini, falling back to the local models.
 
-    Order: Gemini (best, when quota) -> violence classifier -> action model
-    (13 crime types incl. accidents) -> YOLO weapons -> OWLv2 zero-shot objects
-    -> Qwen VLM (thorough, minutes). The first model that finds an incident
-    wins; if none do, the video is reported clear.
+    Gemini answers whenever it can, and its verdict is final either way. Only
+    when it cannot answer at all — no API key, exhausted quota, unreachable —
+    does the cascade run: violence classifier -> action model (13 crime types
+    incl. accidents) -> YOLO weapons -> OWLv2 zero-shot objects -> Qwen VLM
+    (thorough, minutes), first hit wins.
 
     A model that raises — no API key, checkpoint that won't load — is skipped
     and logged, so the cascade degrades rather than failing.
@@ -497,7 +498,21 @@ async def detect_video_auto(
             YOLO and OWLv2 answer with per-frame boxes (`weapon_detected`,
             `detections`), which `LlmDetectionResponse` cannot carry — this is
             what kept them out of the cascade.
+
+            The detector's own verdict gates this: boxes too weak or too
+            isolated to corroborate each other are not an incident, so a lone
+            uncertain hit is reported as a clear video rather than becoming a
+            segment on the timeline (see `vid_img.weapon_verdict`).
             """
+            if not raw.get("weapon_detected"):
+                return {
+                    "model_id": raw.get("model_id") or "object-detector",
+                    "violence_detected": False,
+                    "summary": raw.get("summary")
+                    or "No weapons or objects of interest were found.",
+                    "segments": [],
+                }
+
             segments = detections_to_segments(
                 raw.get("detections") or [],
                 duration,
@@ -516,12 +531,29 @@ async def detect_video_auto(
                 "segments": segments,
             }
 
-        # Every model in turn, cheapest and most reliable first. The first one
-        # to find an incident wins, so the slow VLM only runs when everything
-        # else came back clear — which is what keeps "Auto" usable as a default.
-        cascade = (
-            # Best when the API key has quota; the only path that spots harassment.
-            ("gemini", lambda: detect_violence_llm(video_bytes=file_content, mime_type=mime)),
+        # Gemini decides when it can. It is the only model here that
+        # understands the scene rather than pattern-matching motion or shapes,
+        # so its "nothing happened" is as trustworthy as its "here it is" — and
+        # a cascade that only ever takes the first *yes* has no way to report a
+        # clear video, because each extra stage adds another chance to guess
+        # wrong and none to overrule one. See `detection_runner._run_auto`.
+        try:
+            gemini = await run_in_threadpool(
+                lambda: detect_violence_llm(video_bytes=file_content, mime_type=mime)
+            )
+            logger.info(
+                "auto: Gemini answered (violence_detected=%s) — taking it as final",
+                bool(gemini.get("violence_detected")),
+            )
+            detected = gemini if gemini.get("violence_detected") else None
+            clear_result = None if detected else gemini
+        except Exception as e:
+            logger.info("auto: gemini skipped (%s)", str(e)[:120])
+            gemini = None
+
+        # The local models, in turn, only when Gemini could not answer at all.
+        # They are a fallback for an unreachable API, not a second opinion.
+        cascade = () if gemini is not None else (
             # Dedicated fight/assault classifier.
             ("violence", lambda: detect_violence(video_path=Path(tmp_path))),
             # 13 UCF-Crime classes incl. accidents/robbery. High threshold: the

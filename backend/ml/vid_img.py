@@ -199,6 +199,89 @@ def video_duration(video_path: Path) -> float:
         return 0.0
 
 
+# --------------------------------------------------------------------------- #
+# Weapon verdict
+# --------------------------------------------------------------------------- #
+# An object detector answers per frame, but a scan reports per video, and the
+# two were joined by `len(detections) > 0` — one weak box in one of 24 sampled
+# frames marked a whole clip as armed. That is exactly how a dog clip came back
+# "Gun x1" at 43%, and how a ball does: a fine-tuned YOLOv8n fires weakly on
+# round, dark, hand-held-looking objects, and the boxes it is least sure about
+# are the ones most likely to be something harmless.
+#
+# Real footage of a real weapon does not look like that. The weapon is in shot
+# for more than one sampled instant, so it lands in several sampled frames --
+# or, if it genuinely only appears once, the detector is not hedging about it.
+# Either is evidence; a lone uncertain box is not.
+WEAPON_REPORT_CONFIDENCE = float(os.getenv("WEAPON_REPORT_CONFIDENCE", "0.45"))
+WEAPON_DECISION_CONFIDENCE = float(os.getenv("WEAPON_DECISION_CONFIDENCE", "0.55"))
+WEAPON_CORROBORATION_FRAMES = int(os.getenv("WEAPON_CORROBORATION_FRAMES", "2"))
+WEAPON_LONE_CONFIDENCE = float(os.getenv("WEAPON_LONE_CONFIDENCE", "0.80"))
+
+
+def weapon_verdict(
+    detections: list[dict],
+    *,
+    min_confidence: float = WEAPON_DECISION_CONFIDENCE,
+    min_frames: int = WEAPON_CORROBORATION_FRAMES,
+    lone_confidence: float = WEAPON_LONE_CONFIDENCE,
+) -> bool:
+    """Whether per-frame boxes justify calling the whole video positive.
+
+    Corroboration is counted per label and per *distinct sampled second*, not
+    per box: a single frame that yields three overlapping boxes for the same
+    knife is one sighting, and three boxes of three different classes in one
+    frame is a detector guessing, not three weapons.
+
+    Args:
+        detections: Per-frame boxes (``label``/``score``/``second``).
+        min_confidence: Score a box needs before it counts as evidence at all.
+        min_frames: Distinct sampled seconds one label must appear in.
+        lone_confidence: Score at which a single sighting stands on its own.
+
+    Returns:
+        True when at least one label is corroborated across ``min_frames``
+        sampled seconds, or appears once at ``lone_confidence`` or better.
+    """
+    seconds_by_label: dict[str, set[float]] = {}
+    for det in detections:
+        try:
+            score = float(det.get("score") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if score < min_confidence:
+            continue
+        if score >= lone_confidence:
+            return True
+        label = str(det.get("label") or "object")
+        try:
+            second = round(float(det.get("second") or 0.0), 2)
+        except (TypeError, ValueError):
+            second = 0.0
+        seconds_by_label.setdefault(label, set()).add(second)
+
+    return any(len(seconds) >= min_frames for seconds in seconds_by_label.values())
+
+
+def weapon_summary(detections: list[dict], label_counts: dict[str, int], positive: bool) -> str:
+    """One honest sentence about what the object detector concluded.
+
+    Boxes that did not add up to a verdict are still worth naming — an operator
+    who can see "considered and rejected" trusts the clear result more than a
+    silent one — but the sentence has to lead with the verdict, or a report that
+    found nothing still reads as if it found a gun.
+    """
+    if positive:
+        top = ", ".join(f"{name} x{n}" for name, n in list(label_counts.items())[:4])
+        return f"Weapon detected: {top}." if top else "Weapon detected."
+    if detections:
+        return (
+            "No weapon detected. Some low-confidence boxes were returned but "
+            "none held up across enough frames to count as a sighting."
+        )
+    return "No weapons or objects of interest were found."
+
+
 def _segment_from_run(
     label: str, run: list[dict], interval: float, duration: float, category: str
 ) -> dict:

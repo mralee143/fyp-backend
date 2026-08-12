@@ -269,13 +269,36 @@ export default function ReportPage() {
               {m.text && (
                 <p className="mt-1 text-sm text-muted-foreground">{m.text}</p>
               )}
-              {m.clipUrl && (
-                <video
-                  src={m.clipUrl}
-                  controls
-                  preload="metadata"
-                  className="mt-3 w-full rounded-lg border bg-black sm:max-w-md"
-                />
+              {m.clipUrl ? (
+                <figure className="mt-3 sm:max-w-md">
+                  <video
+                    src={m.clipUrl}
+                    controls
+                    preload="metadata"
+                    className="w-full rounded-lg border bg-black"
+                  />
+                  <figcaption className="mt-1 text-xs text-muted-foreground">
+                    Just this incident, {fmtTime(m.start)}–{fmtTime(m.end)}.
+                  </figcaption>
+                </figure>
+              ) : (
+                /* Scans analysed before incident clips were saved have the
+                   timings but no cut footage. Say so, rather than leaving a
+                   gap that reads as a broken player. */
+                <p className="mt-3 text-xs text-muted-foreground">
+                  No clip was saved for this incident.{" "}
+                  {videoUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => goTo(m.start, m.ordinal)}
+                      className="underline underline-offset-2 hover:text-foreground"
+                    >
+                      Play it in the full video instead →
+                    </button>
+                  ) : (
+                    "Re-run the analysis to generate one."
+                  )}
+                </p>
               )}
             </div>
           ))}

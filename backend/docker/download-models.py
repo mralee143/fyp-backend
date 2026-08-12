@@ -30,6 +30,13 @@ VIOLENCE_MODEL_ID = os.getenv(
 YOLO_MODEL_REPO = os.getenv("YOLO_MODEL_REPO", "Subh775/Threat-Detection-YOLOv8n")
 YOLO_MODEL_FILE = os.getenv("YOLO_MODEL_FILE", "weights/best.pt")
 
+# Qwen2.5-VL (the `model=qwen` detection backend) is opt-in: 7.5 GB for the 3B
+# checkpoint, 16.6 GB for the 7B. Off by default because it is the last stage of
+# a fallback that only runs when Gemini is unreachable, and Gemini covers the
+# same ground faster. Enable with --build-arg INCLUDE_QWEN_VL=true.
+INCLUDE_QWEN_VL = os.getenv("INCLUDE_QWEN_VL", "false").lower() in {"1", "true", "yes"}
+QWEN_VL_MODEL_ID = os.getenv("QWEN_VL_MODEL_ID", "Qwen/Qwen2.5-VL-7B-Instruct")
+
 
 def video_classifier(model_id: str) -> None:
     from transformers import AutoImageProcessor, AutoModelForVideoClassification
@@ -52,12 +59,23 @@ def yolo_weights(repo: str, filename: str) -> None:
     print(f"       -> {path}", flush=True)
 
 
+def qwen_vl(model_id: str) -> None:
+    """Cache Qwen2.5-VL exactly as ml/qwen_infer.py loads it."""
+    from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+
+    AutoProcessor.from_pretrained(model_id)
+    Qwen2_5_VLForConditionalGeneration.from_pretrained(model_id, torch_dtype="auto")
+
+
 TARGETS = [
     ("OWLv2 object detection", owlv2, (OBJECT_MODEL_ID,)),
     ("VideoMAE action (UCF-Crime)", video_classifier, (ACTION_MODEL_ID,)),
     ("VideoMAE violence", video_classifier, (VIOLENCE_MODEL_ID,)),
     ("YOLOv8n weapon weights", yolo_weights, (YOLO_MODEL_REPO, YOLO_MODEL_FILE)),
 ]
+
+if INCLUDE_QWEN_VL:
+    TARGETS.append(("Qwen2.5-VL local video analysis", qwen_vl, (QWEN_VL_MODEL_ID,)))
 
 
 def main() -> int:

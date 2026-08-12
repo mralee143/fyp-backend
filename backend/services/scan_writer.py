@@ -71,13 +71,26 @@ def _peak_second(raw: dict, start: float, end: float) -> Optional[float]:
 
 
 async def write_segments(prisma: Any, scan: Any, result: dict) -> list[Any]:
-    """Insert one `segments` row per flagged event, in timeline order."""
+    """Insert one `segments` row per flagged event, in timeline order.
+
+    A `clip_url` already on the raw segment is carried onto the row. The worker
+    cuts its clips *after* this runs and attaches them with `attach_clip`, but
+    the synchronous paths (`/detection/video/auto`, the chat agent's
+    `analyze_video`) cut theirs *before* saving — and this used to drop that
+    reference, so those scans wrote the clip to disk and then forgot where it
+    was. The report has always had a player for it; there was simply never a
+    URL to give it.
+    """
     raw_segments = result.get("segments") or []
     created: list[Any] = []
 
     for ordinal, raw in enumerate(raw_segments):
         start = float(raw.get("start_time") or 0.0)
         end = float(raw.get("end_time") or 0.0)
+        # "/media/clips/x.mp4" from the local cutter, or a MinIO key from the
+        # worker — `media_store.resolve_media_url` reads both on the way out.
+        clip = raw.get("clip_url") or raw.get("clip_object_key")
+        annotated = raw.get("annotated_clip_url") or raw.get("annotated_clip_object_key")
         segment = await prisma.segment.create(
             data={
                 "scanId": scan.id,
@@ -92,6 +105,8 @@ async def write_segments(prisma: Any, scan: Any, result: dict) -> list[Any]:
                 # column's comment on why a midpoint is not written here.
                 "peakSecond": _peak_second(raw, start, end),
                 "confidence": float(raw.get("confidence") or 0.0),
+                "clipObjectKey": str(clip) if clip else None,
+                "annotatedClipObjectKey": str(annotated) if annotated else None,
             }
         )
         created.append(segment)
@@ -132,7 +147,15 @@ async def write_detections(prisma: Any, scan: Any, result: dict) -> int:
 
 
 async def write_scan_labels(prisma: Any, scan: Any, result: dict) -> int:
-    """Link the scan to every label it touched (the M:N replacement for labels[])."""
+    """Link the scan to every label it *claimed* (the M:N replacement for labels[]).
+
+    A scan label is a statement about the video — it is what "find every scan
+    tagged Gun" searches, and what the report renders as a chip. So the object
+    detectors' `label_counts` only count when their verdict was positive:
+    boxes the detector itself rejected as uncorroborated stay in `detections`,
+    where an operator can go and look at them, but they do not get to tag a
+    clear video "Gun" (see `vid_img.weapon_verdict`).
+    """
     names: set[str] = set()
 
     for raw in result.get("segments") or []:
@@ -141,8 +164,9 @@ async def write_scan_labels(prisma: Any, scan: Any, result: dict) -> int:
         if raw.get("category"):
             names.add(str(raw["category"]))
 
-    for name in (result.get("label_counts") or {}):
-        names.add(str(name))
+    if is_positive(result):
+        for name in (result.get("label_counts") or {}):
+            names.add(str(name))
 
     for name in sorted(names):
         label_id = await get_label_id(prisma, name)

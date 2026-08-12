@@ -1,118 +1,33 @@
-# Two images, two containers.
+# Six containers from TWO images you build plus three official ones you pull.
 #
-#   backend    everything server-side in one image: PostgreSQL 14, Redis, MinIO,
-#              the FastAPI API, the ARQ worker, and all four detection models
-#              baked in. No network needed at run time.
-#   frontend   the Next.js UI.
+#   BUILT      api + worker   one image, two commands (${BACKEND_IMAGE})
+#              frontend       the Next.js UI          (${FRONTEND_IMAGE})
+#   PULLED     postgres:14 · redis:7-alpine · minio/minio
 #
-#   docker compose up -d --build   build and start both
+# Postgres, Redis and MinIO are official images on purpose: they get security
+# updates without rebuilding a 5 GB application image, they restart and back up
+# independently of the app, and the data outlives the container that serves it.
+#
+#   docker compose up -d --build   build and start everything
 #   docker compose ps              check health
-#   docker compose logs -f backend all five backend processes, one stream
+#   docker compose logs -f api worker
 #   docker compose down            stop (data is kept in named volumes)
 #   docker compose down -v         stop AND wipe the data
 #
-# The `postgres`, `redis` and `minio` services further down are the old split
-# stack, kept for the venv workflow in RUN.md section B. They sit behind a
-# profile, so `docker compose up -d` ignores them — but naming them explicitly
-# (`docker compose up -d postgres redis minio`) still works exactly as before.
-# Do not run both at once: they publish the same host ports, and the backend
-# image mounts the same volumes.
+# The single-container build is still available for hosts that run exactly one
+# container. It bundles Postgres, Redis and MinIO inside the app image and is
+# behind the "aio" profile, so it never starts by accident alongside the above:
+#
+#   docker compose --profile aio up -d backend frontend
+#
+# Never run both — they publish the same ports and mount the same volumes.
 
 services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      args:
-        # CPU torch by default. For an NVIDIA GPU use
-        #   https://download.pytorch.org/whl/cu126
-        # and uncomment the `deploy` block below.
-        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
-    # Local name by default; set BACKEND_IMAGE to a Docker Hub repo (see
-    # .env.production) and `docker compose push` publishes it.
-    image: ${BACKEND_IMAGE:-vision-backend:latest}
-    container_name: vision_backend
-    restart: unless-stopped
-    env_file:
-      # Secrets and anything without a safe default: SECRET_KEY, GEMINI_API_KEY,
-      # the SMTP block. Both optional so a fresh clone still starts, and
-      # .env.production is read last so it wins where the two overlap.
-      - path: .env
-        required: false
-      - path: .env.production
-        required: false
-    environment:
-      # The five processes share this container's network namespace, so the
-      # API reaches the database, Redis and MinIO on loopback. These override
-      # whatever .env says, since .env holds host-side addresses.
-      DATABASE_URL: postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:-postgres}@127.0.0.1:5432/${POSTGRES_DB:-vision_db}
-      REDIS_URL: redis://127.0.0.1:6379/0
-      MINIO_ENDPOINT: 127.0.0.1:9000
-      POSTGRES_USER: ${POSTGRES_USER:-root}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-vision_db}
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-      # Frames and clips reach the browser as presigned URLs, and a presigned
-      # URL signs its own Host header. The browser talks to the published port,
-      # so that is the host the signature has to be built against — which on a
-      # deployed server is the public address, not localhost. Set
-      # MINIO_PUBLIC_ENDPOINT in .env.production to override the local default.
-      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-localhost:9000}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me-min-32-characters-long}
-    ports:
-      - "${API_PORT:-8000}:8000"
-      # Host 5434 -> container 5432 (host 5432/5433 are taken by native PostgreSQL 13/18).
-      - "${POSTGRES_PORT:-5434}:5432"
-      - "${REDIS_PORT:-6379}:6379"
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
-    volumes:
-      # The same volumes the split stack used, mounted at the paths the bundled
-      # services expect — so an existing database, object store and job queue
-      # carry straight over.
-      - postgres_data:/var/lib/postgresql/data
-      - minio_data:/data/minio
-      - redis_data:/data/redis
-      # Incident clips written before object storage, still served from /media.
-      - media_data:/app/media
-    # GPU (NVIDIA Container Toolkit + a CUDA TORCH_INDEX_URL build):
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        # Baked into the client bundle at build time: this is the URL the
-        # browser calls, so it is a host address, never `http://backend:8000`.
-        # Change it and rebuild — a restart alone will not pick it up.
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-    image: ${FRONTEND_IMAGE:-vision-frontend:latest}
-    container_name: vision_frontend
-    restart: unless-stopped
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-    depends_on:
-      backend:
-        condition: service_healthy
-
   # --------------------------------------------------------------------------
-  # Split backing services — RUN.md section B (running the API from the venv).
-  # Behind a profile so a bare `docker compose up -d` skips them.
+  # Backing services — official images, pulled not built
   # --------------------------------------------------------------------------
 
   postgres:
-    profiles: ["split"]
     image: postgres:14
     container_name: vision_db_postgres
     restart: unless-stopped
@@ -121,6 +36,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-root}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
+      # Host 5434 -> container 5432 (host 5432/5433 are taken by native PostgreSQL 13/18).
       - "${POSTGRES_PORT:-5434}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -132,7 +48,6 @@ services:
       retries: 5
 
   minio:
-    profiles: ["split"]
     image: minio/minio:latest
     container_name: vision_db_minio
     restart: unless-stopped
@@ -154,7 +69,6 @@ services:
       retries: 5
 
   redis:
-    profiles: ["split"]
     image: redis:7-alpine
     container_name: vision_db_redis
     restart: unless-stopped
@@ -170,6 +84,201 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  ollama:
+    # Same image as api/worker — the binary and the Qwen weights are baked in,
+    # so this is one more command against the image you already pulled, not a
+    # separate download. Serves the OpenAI-compatible API the chat agent calls.
+    build: &app_build
+      context: ./backend
+      dockerfile: Dockerfile
+      target: service
+      args:
+        # CPU torch by default. For an NVIDIA GPU use
+        #   https://download.pytorch.org/whl/cu126
+        # and uncomment the `deploy` blocks below.
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+        # Bakes Qwen2.5-VL for the `model=qwen` backend. Off by default: 16.6 GB
+        # for 7B, 7.5 GB for 3B, and it only runs when Gemini cannot answer.
+        INCLUDE_QWEN_VL: ${INCLUDE_QWEN_VL:-false}
+        QWEN_VL_MODEL_ID: ${QWEN_VL_MODEL_ID:-Qwen/Qwen2.5-VL-7B-Instruct}
+    image: ${BACKEND_IMAGE:-vision-backend:latest}
+    container_name: vision_ollama
+    restart: unless-stopped
+    environment:
+      OLLAMA_MODELS: /opt/ollama
+      OLLAMA_HOST: 0.0.0.0:11434
+    command: ["ollama", "serve"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # --------------------------------------------------------------------------
+  # Application — api and worker share one image, built from the same Dockerfile
+  # as the all-in-one but stopping at the `service` target.
+  # --------------------------------------------------------------------------
+
+  api:
+    build: *app_build
+    image: ${BACKEND_IMAGE:-vision-backend:latest}
+    container_name: vision_api
+    restart: unless-stopped
+    env_file: &app_env_file
+      # Secrets and anything without a safe default: SECRET_KEY, GEMINI_API_KEY,
+      # the SMTP block. Both optional so a fresh clone still starts, and
+      # .env.production is read last so it wins where the two overlap.
+      - path: .env
+        required: false
+      - path: .env.production
+        required: false
+    environment: &app_env
+      # Reach the backing services by compose service name. These override
+      # whatever .env says, since .env holds host-side addresses.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-vision_db}
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      # Frames and clips reach the browser as presigned URLs, and a presigned
+      # URL signs its own Host header — so it must be signed against the address
+      # the browser will request, which on a deployed server is the public one.
+      # The API talks to `minio:9000`; the browser cannot resolve that at all.
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-localhost:9000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me-min-32-characters-long}
+      # The chat agent talks to the `ollama` container, not to localhost — in a
+      # container localhost is the container itself, which serves no model.
+      QWEN_CHAT_BASE_URL: http://ollama:11434/v1
+      QWEN_CHAT_MODEL: ${QWEN_CHAT_MODEL:-qwen2.5:3b}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      # Incident clips written before object storage, still served from /media.
+      - media_data:/app/media
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      ollama: {condition: service_healthy}
+    # Push the schema before serving, so a fresh database is usable immediately.
+    command: >
+      sh -c "prisma db push --schema=prisma/schema.prisma --skip-generate --accept-data-loss &&
+             uvicorn main:app --host 0.0.0.0 --port 8000"
+    # GPU (NVIDIA Container Toolkit + a CUDA TORCH_INDEX_URL build):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  worker:
+    # Same image as the API — video analysis runs here, not in the request
+    # cycle. Without this container uploads are accepted and stay QUEUED.
+    build: *app_build
+    image: ${BACKEND_IMAGE:-vision-backend:latest}
+    container_name: vision_worker
+    restart: unless-stopped
+    env_file: *app_env_file
+    environment: *app_env
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      api: {condition: service_started}
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      ollama: {condition: service_healthy}
+    command: ["arq", "worker.WorkerSettings"]
+    # The shared image carries the API's HTTP healthcheck; the worker serves no
+    # HTTP, so inheriting it would mark this container unhealthy forever.
+    healthcheck:
+      disable: true
+    # Same GPU block as `api` applies here — this is where the models run.
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the client bundle at build time: this is the URL the
+        # browser calls, so it is a host address, never `http://backend:8000`.
+        # Change it and rebuild — a restart alone will not pick it up.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: ${FRONTEND_IMAGE:-vision-frontend:latest}
+    container_name: vision_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    # `api` in the default stack. With --profile aio the API lives in `backend`
+    # instead, and compose drops a depends_on whose target is not in the run.
+    depends_on:
+      api:
+        condition: service_healthy
+        required: false
+
+  # --------------------------------------------------------------------------
+  # Single-container build — everything server-side in ONE image: PostgreSQL 14,
+  # Redis, MinIO, the API and the worker, driven by supervisor. Behind the "aio"
+  # profile so it never starts alongside the split stack above, which would
+  # fight it for every port and volume.
+  #
+  #   docker compose --profile aio build backend
+  #   docker compose --profile aio up -d backend frontend
+  # --------------------------------------------------------------------------
+
+  backend:
+    profiles: ["aio"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: allinone
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    image: ${BACKEND_AIO_IMAGE:-vision-backend:allinone}
+    container_name: vision_backend
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.production
+        required: false
+    environment:
+      # All five processes share this container's network namespace, so the API
+      # reaches the database, Redis and MinIO on loopback.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:-postgres}@127.0.0.1:5432/${POSTGRES_DB:-vision_db}
+      REDIS_URL: redis://127.0.0.1:6379/0
+      MINIO_ENDPOINT: 127.0.0.1:9000
+      POSTGRES_USER: ${POSTGRES_USER:-root}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-vision_db}
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-localhost:9000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me-min-32-characters-long}
+      # supervisor runs ollama in this same container, so loopback is correct.
+      QWEN_CHAT_BASE_URL: http://127.0.0.1:11434/v1
+      QWEN_CHAT_MODEL: ${QWEN_CHAT_MODEL:-qwen2.5:3b}
+    ports:
+      - "${API_PORT:-8000}:8000"
+      - "${POSTGRES_PORT:-5434}:5432"
+      - "${REDIS_PORT:-6379}:6379"
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      # The same volumes the split stack uses, at the paths the bundled services
+      # expect — so the database and object store carry across either way.
+      - postgres_data:/var/lib/postgresql/data
+      - minio_data:/data/minio
+      - redis_data:/data/redis
+      - media_data:/app/media
 
 volumes:
   postgres_data:
