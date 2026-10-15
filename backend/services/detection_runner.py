@@ -50,6 +50,17 @@ VIDEO_MIME = {
 # bar and lets the dedicated violence classifier handle borderline fights.
 _AUTO_ACTION_THRESHOLD = 0.85
 
+# Qwen runs as a subprocess that loads a multi-billion-parameter model into its
+# own address space, so two of them are two full copies of the weights. The
+# worker takes `max_jobs` videos at once, and on a 16 GB host the second copy
+# does not fit — both processes then page against each other and neither
+# finishes inside its budget. One at a time is strictly faster than two.
+_QWEN_SLOT = asyncio.Semaphore(1)
+
+# Below this much of the budget left, starting Qwen only burns the remainder on
+# loading weights it will be killed before it can use.
+_QWEN_MIN_SECONDS = 60
+
 # Progress callback: (percent, stage, human message) -> awaitable
 ProgressFn = Callable[[int, str, str], Awaitable[None]]
 
@@ -153,7 +164,7 @@ async def run_detection(
     progress = on_progress or _noop
 
     if model == "yolo":
-        await progress(40, "detecting", "Running the YOLO weapon detector…")
+        await progress(40, "detecting", "Scanning for weapons…")
         return await asyncio.to_thread(
             detect_weapons_yolo,
             video_path=video_path,
@@ -162,7 +173,7 @@ async def run_detection(
         )
 
     if model == "owlv2":
-        await progress(40, "detecting", "Running zero-shot object detection…")
+        await progress(40, "detecting", "Scanning for objects…")
         return await asyncio.to_thread(
             detect_weapons,
             video_path=video_path,
@@ -172,7 +183,7 @@ async def run_detection(
         )
 
     if model == "llm":
-        await progress(40, "detecting", "Sending the video to Gemini…")
+        await progress(40, "detecting", "Analysing the video…")
         mime = VIDEO_MIME.get(video_path.suffix.lower(), "video/mp4")
         video_bytes = await asyncio.to_thread(video_path.read_bytes)
         result = await asyncio.to_thread(
@@ -181,7 +192,7 @@ async def run_detection(
         return await _shape(result, video_path)
 
     if model == "qwen":
-        await progress(40, "detecting", "Running the local Qwen2.5-VL model…")
+        await progress(40, "detecting", "Analysing the video…")
         result = await asyncio.to_thread(detect_violence_qwen, video_path=str(video_path))
         return await _shape(result, video_path)
 
@@ -200,15 +211,24 @@ async def run_detection(
 
 
 async def _run_auto(video_path: Path, progress: ProgressFn) -> dict:
-    """Cascade: Gemini, then violence classifier -> action model as a fallback.
+    """Cascade: Gemini -> Qwen, then violence classifier -> action model.
+
+    The progress messages name no model. Which backend answered is an internal
+    detail — the person watching a video upload wants to know the analysis is
+    moving, and a message that says a vendor is unavailable reads as a fault in
+    the product. The winning model is still recorded on the scan for anyone who
+    needs it; it is just not narrated live.
 
     Each stage is optional — a missing API key, an exhausted quota or an
     unavailable local model just moves the cascade on to the next backend
     instead of failing the job.
 
-    **Gemini decides when it runs.** The stages below it are a fallback for a
-    Gemini that could not answer, not a second opinion on one that did. Taking
-    the first *positive* instead compounded every model's false-positive rate:
+    **Gemini decides when it runs, and Qwen stands in for it.** The two
+    scene-reading models sit at the top because they are the only backends that
+    watch the whole clip and can genuinely report "nothing here". The
+    classifiers below them are a fallback for a stage that could not answer at
+    all, not a second opinion on one that did. Taking the first *positive*
+    instead compounded every model's false-positive rate:
     Gemini would watch a clip of a ball and correctly report nothing, and that
     verdict was thrown away the moment a downstream classifier — which has no
     way to abstain, and no idea what it is looking at — guessed "violence".
@@ -222,12 +242,15 @@ async def _run_auto(video_path: Path, progress: ProgressFn) -> dict:
     #    from context) and fast, when the key has quota left. It is also the
     #    only one that actually understands the scene, so its "nothing here" is
     #    worth as much as its "here it is": both are returned as final.
-    await progress(40, "detecting", "Asking Gemini to watch the video…")
+    await progress(40, "detecting", "Analysing the video…")
     try:
         mime = VIDEO_MIME.get(video_path.suffix.lower(), "video/mp4")
         video_bytes = await asyncio.to_thread(video_path.read_bytes)
         result = await asyncio.to_thread(
-            detect_violence_llm, video_bytes=video_bytes, mime_type=mime
+            detect_violence_llm,
+            video_bytes=video_bytes,
+            mime_type=mime,
+            budget_s=settings.auto_gemini_timeout_seconds,
         )
         logger.info(
             "auto: Gemini answered (violence_detected=%s) — taking it as final",
@@ -239,9 +262,55 @@ async def _run_auto(video_path: Path, progress: ProgressFn) -> dict:
     except Exception as exc:
         logger.info("auto: Gemini failed (%s)", str(exc)[:120])
 
-    # 2) Dedicated violence classifier — accurate on fights and assault.
+    # 2) Local Qwen2.5-VL — the stand-in for a Gemini that could not answer,
+    #    and the reason an exhausted quota no longer drops straight to the
+    #    classifiers. It reads the scene the same way Gemini does, so its
+    #    verdict is final on the same grounds: a model that can abstain is
+    #    worth as much when it says "nothing here" as when it says otherwise.
+    #
+    #    It runs in its own venv as a subprocess, and on a CPU-only host that
+    #    pass is slow enough to outlast the job itself — hence its own budget
+    #    (`auto_qwen_timeout_seconds`). Overrunning it is not a failure; the
+    #    cascade simply carries on to the classifiers.
+    if settings.auto_qwen_enabled:
+        await progress(46, "detecting", "Still analysing — this one is taking longer…")
+        # The budget covers the queue for the slot as well as the run itself.
+        # A job that spends it all waiting has not failed — it just goes to the
+        # classifiers, which is the whole point of the stage being optional.
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + settings.auto_qwen_timeout_seconds
+        try:
+            await asyncio.wait_for(
+                _QWEN_SLOT.acquire(), timeout=settings.auto_qwen_timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            logger.info("auto: Qwen skipped (another job held the slot for the whole budget)")
+        else:
+            try:
+                remaining = int(deadline - loop.time())
+                if remaining < _QWEN_MIN_SECONDS:
+                    logger.info("auto: Qwen skipped (only %ss of its budget left)", remaining)
+                else:
+                    result = await asyncio.to_thread(
+                        detect_violence_qwen,
+                        video_path=str(video_path),
+                        timeout_s=remaining,
+                    )
+                    logger.info(
+                        "auto: Qwen answered (violence_detected=%s) — taking it as final",
+                        bool(result.get("violence_detected")),
+                    )
+                    return result
+            except QwenDetectionError as exc:
+                logger.info("auto: Qwen skipped (%s)", str(exc)[:160])
+            except Exception as exc:
+                logger.info("auto: Qwen failed (%s)", str(exc)[:160])
+            finally:
+                _QWEN_SLOT.release()
+
+    # 3) Dedicated violence classifier — accurate on fights and assault.
     if detected is None:
-        await progress(52, "detecting", "Running the violence classifier…")
+        await progress(52, "detecting", "Checking for violence…")
         try:
             result = await asyncio.to_thread(detect_violence, video_path=video_path)
             if result.get("violence_detected"):
@@ -251,7 +320,7 @@ async def _run_auto(video_path: Path, progress: ProgressFn) -> dict:
         except Exception as exc:
             logger.info("auto: violence model skipped (%s)", str(exc)[:120])
 
-    # 3) Action model — covers robbery, arson, road accidents and the rest of
+    # 4) Action model — covers robbery, arson, road accidents and the rest of
     #    the UCF-Crime classes the other two can miss.
     if detected is None:
         await progress(62, "detecting", "Checking for criminal actions…")

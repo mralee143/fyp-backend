@@ -539,6 +539,12 @@ model AgentChatSession {
   videoName  String?  @map("video_name") // original filename shown in the UI
   videoUrl   String?  @map("video_url") // /media/... URL for playback
   lastScanId Int?     @map("last_scan_id") // most recent scan produced in this chat
+  /// Public id of the analysis job queued for `videoPath`. Stored so a chat
+  /// reopened in a fresh page load can rejoin a run still in flight — without
+  /// it the handle lives only in the browser tab that started the upload, and
+  /// navigating away loses the analysis. Cleared whenever a new video is
+  /// attached, alongside `lastScanId`.
+  jobId      String?  @map("job_id")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @default(now()) @map("updated_at")
 

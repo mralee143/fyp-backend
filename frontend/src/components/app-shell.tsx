@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
-  LogOutIcon,
   MenuIcon,
   PanelLeftCloseIcon,
   PanelLeftIcon,
@@ -14,7 +13,7 @@ import {
 
 import { ChatSessionsPanel } from "@/components/chat/chat-sessions-panel";
 import { Button } from "@/components/ui/button";
-import { logout } from "@/lib/auth";
+import { displayName } from "@/lib/auth";
 import { getMe } from "@/lib/admin";
 import { NAV_ITEMS, isActivePath } from "@/lib/nav";
 import { useAuthStore } from "@/store/auth";
@@ -26,31 +25,36 @@ import { useAuthStore } from "@/store/auth";
  * It lives in `app/(app)/layout.tsx`, so it mounts once and survives
  * navigation — the sidebar keeps its collapsed state and the chat list keeps
  * its data as you move between routes.
+ *
+ * The conversation list sits under the nav on every route, not just `/chat`, so
+ * recent chats are always one click away; the footer identifies the signed-in
+ * account and opens the profile, which is where signing out lives.
  */
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
   const pathname = usePathname();
-  const email = useAuthStore((s) => s.email);
+  const storedEmail = useAuthStore((s) => s.email);
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  // The server is the authority on the address; the stored one covers the gap
+  // before /auth/me answers so the footer never renders blank.
+  const [email, setEmail] = useState<string | null>(storedEmail);
 
   useEffect(() => {
     getMe()
-      .then((me) => setIsAdmin(me.is_admin))
+      .then((me) => {
+        setIsAdmin(me.is_admin);
+        setEmail(me.email);
+      })
       .catch(() => setIsAdmin(false));
   }, []);
 
   const items = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
   const active = items.find((item) => isActivePath(pathname, item.href));
-  const onChat = pathname.startsWith("/chat");
-
-  function handleLogout() {
-    logout();
-    router.replace("/login");
-  }
+  const onProfile = pathname.startsWith("/profile");
+  const name = displayName(email);
 
   return (
     <div className="min-h-screen bg-background">
@@ -129,40 +133,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </ul>
         </nav>
 
-        {/* Route-specific sidebar content: the conversation list on /chat. */}
-        {onChat && !collapsed && <ChatSessionsPanel />}
+        {/* Every conversation, on every route. */}
+        {!collapsed && <ChatSessionsPanel onNavigate={() => setMobileOpen(false)} />}
 
-        {/* Session */}
+        {/* Who is signed in — and the way to the profile, where logging out is. */}
         <footer className="mt-auto shrink-0 border-t p-2">
-          {collapsed ? (
-            <button
-              type="button"
-              onClick={handleLogout}
-              title="Log out"
-              aria-label="Log out"
-              className="grid size-9 w-full place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <LogOutIcon className="size-4" />
-            </button>
-          ) : (
-            <div className="flex items-center gap-2 rounded-lg px-1.5 py-1">
-              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-xs font-medium uppercase">
-                {email?.[0] ?? "?"}
+          <Link
+            href="/profile"
+            onClick={() => setMobileOpen(false)}
+            aria-current={onProfile ? "page" : undefined}
+            title={collapsed ? `${name} — open profile` : "Open your profile"}
+            className={[
+              "flex items-center gap-2 rounded-lg transition-colors",
+              collapsed ? "justify-center p-1.5" : "px-1.5 py-1.5",
+              onProfile
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            ].join(" ")}
+          >
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-semibold uppercase text-primary">
+              {email?.[0] ?? "?"}
+            </span>
+            {!collapsed && (
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-foreground">
+                  {name}
+                </span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {email ?? "Signed in"}
+                </span>
               </span>
-              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                {email ?? "Signed in"}
-              </span>
-              <button
-                type="button"
-                onClick={handleLogout}
-                aria-label="Log out"
-                title="Log out"
-                className="grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <LogOutIcon className="size-4" />
-              </button>
-            </div>
-          )}
+            )}
+          </Link>
         </footer>
       </aside>
 
@@ -191,7 +193,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <MenuIcon className="size-4" />
           </button>
 
-          <h1 className="truncate text-sm font-medium">{active?.label ?? "SentinelAI"}</h1>
+          <h1 className="truncate text-sm font-medium">
+            {active?.label ?? (onProfile ? "Profile" : "SentinelAI")}
+          </h1>
 
           <div className="ms-auto flex items-center gap-2">
             <Button

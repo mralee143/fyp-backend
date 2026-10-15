@@ -765,6 +765,37 @@ TOOL_EXECUTORS: dict[str, Callable[[AgentContext, dict], Awaitable[dict]]] = {
     "get_scan_report": _tool_get_scan_report,
 }
 
+# Tools with nothing to act on until a video is attached: one analyses it, and
+# the other two drive the player showing it.
+VIDEO_TOOLS = frozenset({"analyze_video", "control_video_playback", "show_frame_at"})
+
+
+def tools_for(session: dict) -> list[dict[str, Any]]:
+    """The tool schemas worth offering this conversation.
+
+    A chat with no upload was still shown all six, and paid for it twice: the
+    three video tools are dead weight in every prompt, and the model would
+    periodically call one, receive "No video is attached to this chat", and burn
+    a second full inference recovering from a refusal it could not have avoided.
+    Both costs land hardest on exactly the turns that should be quickest — the
+    ones with nothing to analyse.
+
+    The database tools are always offered; they answer from past scans and do
+    not care what this conversation has attached.
+
+    Note for the prompt cache: this yields two possible prefixes rather than
+    one, so the served KV cache holds an entry per shape instead of a single
+    shared one. Both stay byte-identical across conversations of the same shape,
+    which is what the reuse actually depends on.
+    """
+    if session.get("video_path"):
+        return TOOL_SCHEMAS
+    return [
+        schema
+        for schema in TOOL_SCHEMAS
+        if schema["function"]["name"] not in VIDEO_TOOLS
+    ]
+
 
 async def analyze_and_store(
     ctx: AgentContext, detector: str = "auto", args: Optional[dict] = None

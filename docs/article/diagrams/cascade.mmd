@@ -1,0 +1,40 @@
+---
+title: The auto cascade — first-positive vs. one decider
+---
+flowchart TB
+
+subgraph BEFORE["❌ What I built first — first positive wins"]
+  direction TB
+  B_IN["Clip: people playing with a ball"]
+  B_G["Gemini<br/>'nothing here'"]
+  B_V["Violence classifier<br/>sees fast motion → 'violence'"]
+  B_A["Action model<br/>(never reached)"]
+  B_OUT["REPORT: violence detected ❌"]
+
+  B_IN --> B_G
+  B_G -- "negative discarded<br/>keep looking" --> B_V
+  B_V -- "first positive wins" --> B_OUT
+  B_A -.-> B_OUT
+end
+
+subgraph AFTER["✅ What works — one model decides"]
+  direction TB
+  A_IN["Clip: people playing with a ball"]
+  A_G{"Gemini<br/>did it answer at all?"}
+  A_FINAL["REPORT: clear ✅<br/>verdict is final either way"]
+  A_V["Violence classifier"]
+  A_A["Action model ≥ 0.85"]
+  A_OUT2["REPORT: best-effort fallback"]
+
+  A_IN --> A_G
+  A_G -- "yes — positive OR negative" --> A_FINAL
+  A_G -- "no key / no quota / network error" --> A_V --> A_A --> A_OUT2
+end
+
+classDef bad  fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+classDef good fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
+classDef neutral fill:#f1f5f9,stroke:#64748b,stroke-width:1px,color:#0f172a
+
+class B_OUT,B_V bad
+class A_FINAL good
+class B_IN,B_G,B_A,A_IN,A_G,A_V,A_A,A_OUT2 neutral

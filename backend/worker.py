@@ -47,6 +47,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("worker")
 
+# How often a long detection stage repeats itself on the event stream. Well
+# under the five minutes the chat waits before it declares a job abandoned.
+_HEARTBEAT_SECONDS = int(os.getenv("JOB_HEARTBEAT_SECONDS", "30"))
+
 
 # --------------------------------------------------------------------------- #
 # Helpers
@@ -190,6 +194,9 @@ async def analyze_video(ctx: dict, job_id: int) -> dict:
     window_seconds = job.windowSeconds
     stride_seconds = job.strideSeconds
     local_path: Optional[str] = None
+    # Bound before the try so the cleanup can always cancel it, including on a
+    # failure that happens before detection starts.
+    pulse: Optional[asyncio.Task] = None
 
     try:
         job = await prisma.analysisjob.update(
@@ -240,19 +247,30 @@ async def analyze_video(ctx: dict, job_id: int) -> dict:
             object_key = media_store.frame_key(video.id, frame.sequence)
             await media_store.put_bytes(object_key, frame.jpeg, "image/jpeg")
 
-            image = await prisma.image.create(
+            # Upsert, not create: the frame key is derived from (video, sequence),
+            # so a retry of a job that died after this stage would otherwise hit
+            # the unique constraint on object_key and fail at 5% forever. The
+            # bytes above are overwritten in place, so the row is refreshed too.
+            frame_data = {
+                "generatedFilename": f"{video.id}_{frame.sequence:04d}.jpg",
+                "mimeType": "image/jpeg",
+                "fileSize": len(frame.jpeg),
+                "width": frame.width,
+                "height": frame.height,
+                "sequence": frame.sequence,
+                "capturedAtSeconds": frame.timestamp_seconds,
+            }
+            image = await prisma.image.upsert(
+                where={"objectKey": object_key},
                 data={
-                    "kind": "FRAME",
-                    "videoId": video.id,
-                    "objectKey": object_key,
-                    "generatedFilename": f"{video.id}_{frame.sequence:04d}.jpg",
-                    "mimeType": "image/jpeg",
-                    "fileSize": len(frame.jpeg),
-                    "width": frame.width,
-                    "height": frame.height,
-                    "sequence": frame.sequence,
-                    "capturedAtSeconds": frame.timestamp_seconds,
-                }
+                    "create": {
+                        "kind": "FRAME",
+                        "videoId": video.id,
+                        "objectKey": object_key,
+                        **frame_data,
+                    },
+                    "update": frame_data,
+                },
             )
             frame_rows.append((image, frame.timestamp_seconds))
 
@@ -272,9 +290,43 @@ async def analyze_video(ctx: dict, job_id: int) -> dict:
         job = await _set_stage(prisma, job, "detecting", 30, "Running detection…")
 
         async def on_progress(percent: int, stage: str, message: str) -> None:
+            last_progress["stage"] = stage
+            last_progress["percent"] = percent
+            last_progress["message"] = message
             await events.emit(
                 prisma, job, events.JOB_PROGRESS, stage=stage, progress=percent, message=message
             )
+
+        # Detection reports at stage boundaries, and the stages between them are
+        # long: uploading a video to Gemini, or a CPU pass over every window,
+        # runs for minutes without a word. A subscriber cannot tell that apart
+        # from a worker that died, and the chat gives up on a silent job and
+        # re-runs the analysis itself — so the silence did not just look like a
+        # failure, it caused one. Repeat the current stage often enough to stay
+        # audibly alive.
+        last_progress = {
+            "stage": "detecting",
+            "percent": 30,
+            "message": "Running detection…",
+        }
+
+        elapsed = 0
+
+        async def heartbeat() -> None:
+            nonlocal elapsed
+            while True:
+                await asyncio.sleep(_HEARTBEAT_SECONDS)
+                elapsed += _HEARTBEAT_SECONDS
+                await events.emit(
+                    prisma,
+                    job,
+                    events.JOB_PROGRESS,
+                    stage=last_progress["stage"],
+                    progress=last_progress["percent"],
+                    message=f"{last_progress['message']} ({elapsed // 60}m {elapsed % 60:02d}s)",
+                )
+
+        pulse = asyncio.create_task(heartbeat())
 
         result = await run_detection(
             model_code,
@@ -297,6 +349,11 @@ async def analyze_video(ctx: dict, job_id: int) -> dict:
         if raw_segments:
             job = await _set_stage(
                 prisma, job, "clipping", 72, f"Preparing {len(segments)} incident clip(s)…"
+            )
+            last_progress.update(
+                stage="clipping",
+                percent=72,
+                message=f"Preparing {len(segments)} incident clip(s)…",
             )
             # Name the objects involved ("a car and a motorcycle") before cutting.
             try:
@@ -327,6 +384,10 @@ async def analyze_video(ctx: dict, job_id: int) -> dict:
             )
 
             progress = 72 + int(18 * (index + 1) / max(len(segments), 1))
+            last_progress.update(
+                percent=progress,
+                message=f"Incident {index + 1} of {len(segments)} ready",
+            )
             await prisma.analysisjob.update(
                 where={"id": job.id}, data={"progress": progress}
             )
@@ -411,6 +472,8 @@ async def analyze_video(ctx: dict, job_id: int) -> dict:
         raise
 
     finally:
+        if pulse is not None:
+            pulse.cancel()
         if local_path and os.path.exists(local_path):
             try:
                 os.remove(local_path)

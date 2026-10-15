@@ -28,7 +28,12 @@ services:
   # --------------------------------------------------------------------------
 
   postgres:
-    image: postgres:14
+    # Must match the major version that initialised postgres_data. The volume
+    # here was created by 16, and Postgres refuses to start against a data
+    # directory from a different major ("database files are incompatible with
+    # server"), so pinning 14 takes the database offline rather than migrating
+    # it. Changing this tag is a data migration, not a version bump.
+    image: postgres:16
     container_name: vision_db_postgres
     restart: unless-stopped
     environment:

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   FileVideoIcon,
   PaperclipIcon,
@@ -16,7 +16,15 @@ import { LiveAnalysisCard } from "@/components/chat/live-analysis-card";
 import { ToolCard } from "@/components/chat/tool-card";
 import { VideoPanel } from "@/components/chat/video-panel";
 import { validateVideo } from "@/lib/detection";
-import { useChatStore } from "@/store/chat";
+import {
+  DEFAULT_PANEL_WIDTH,
+  WIDE_PANEL_WIDTH,
+  useChatStore,
+  useIsBusy,
+  useTurnState,
+  useUploadPercent,
+  type TurnPhase,
+} from "@/store/chat";
 
 /**
  * Agent chat: attach a video and a question, then send them together.
@@ -39,14 +47,42 @@ const SUGGESTIONS = [
   "How many threats have I found across all my scans?",
 ];
 
-/** Detectors the upload can be analysed with — same set as the analyser page. */
-const MODELS = [
-  { value: "auto", label: "Auto", hint: "Every model in turn — best coverage" },
-  { value: "yolo", label: "Weapons", hint: "Fast, local: guns, knives, grenades" },
-  { value: "action", label: "Actions", hint: "Fighting, robbery, accidents" },
-  { value: "llm", label: "Gemini", hint: "Understands context and harassment" },
-  { value: "qwen", label: "Qwen", hint: "Offline, slow but thorough" },
-];
+
+/**
+ * What the chat is actually waiting on, stage by stage.
+ *
+ * "Running detection" used to sit there for the whole turn, so a completed
+ * analysis looked stuck — the detectors had finished minutes earlier and it was
+ * the chat model still generating. Each stage now says which one is which.
+ */
+const PHASE_TEXT: Record<TurnPhase, { title: string; hint: string }> = {
+  uploading: {
+    title: "Uploading the video…",
+    hint: "The analysis starts as soon as the bytes land.",
+  },
+  analysing: {
+    title: "Running detection…",
+    hint: "Frames and incidents appear in the card above as the worker finds them.",
+  },
+  summarising: {
+    title: "Writing up the findings…",
+    hint: "Reading back what the detectors stored — no model involved.",
+  },
+  thinking: {
+    title: "Thinking…",
+    hint: "Detection is done; the chat model is composing the reply.",
+  },
+  writing: {
+    title: "Writing the reply…",
+    hint: "The answer is appearing above as the model generates it.",
+  },
+};
+
+/** Seconds a turn has been running -> "1m 20s". */
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${(seconds % 60).toString().padStart(2, "0")}s`;
+}
 
 /** Human-readable file size for the attachment chip. */
 function formatBytes(bytes: number): string {
@@ -58,18 +94,56 @@ function formatBytes(bytes: number): string {
 export default function ChatPage() {
   const detail = useChatStore((s) => s.detail);
   const activeId = useChatStore((s) => s.activeId);
-  const sending = useChatStore((s) => s.sending);
-  const uploadPercent = useChatStore((s) => s.uploadPercent);
+  // All three are per conversation: another chat thinking must not disable or
+  // relabel this one.
+  const sending = useIsBusy();
+  const turn = useTurnState();
+  const uploadPercent = useUploadPercent();
   const panelOpen = useChatStore((s) => s.panelOpen);
+  const panelWidth = useChatStore((s) => s.panelWidth);
+  const setPanelWidth = useChatStore((s) => s.setPanelWidth);
   const submit = useChatStore((s) => s.submit);
   const togglePanel = useChatStore((s) => s.togglePanel);
 
   const [input, setInput] = useState("");
   // Staged by the paperclip, uploaded and analysed by the arrow.
   const [pending, setPending] = useState<File | null>(null);
-  const [model, setModel] = useState("auto");
+  /** Ticked once a second while a turn runs, to drive the elapsed readout. */
+  const [now, setNow] = useState(() => Date.now());
   const fileRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const asideRef = useRef<HTMLElement>(null);
+  /** True while the divider is being dragged — kills the width transition. */
+  const [dragging, setDragging] = useState(false);
+
+  /**
+   * The divider drag. Pointer capture keeps the moves coming even when the
+   * cursor outruns the 8px handle, which it does on any real drag.
+   */
+  function startDrag(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragging(true);
+  }
+
+  function onDrag(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragging) return;
+    const right = asideRef.current?.getBoundingClientRect().right;
+    if (right === undefined) return;
+    // The panel is anchored to the right edge, so its width is whatever is
+    // left between the pointer and that edge. The store clamps it.
+    setPanelWidth(right - e.clientX);
+  }
+
+  function endDrag(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setDragging(false);
+  }
+
+  /** Which end of the range the panel is at — drives the arrow and the height. */
+  const panelWide = panelWidth > (DEFAULT_PANEL_WIDTH + WIDE_PANEL_WIDTH) / 2;
 
   const messages = detail?.messages ?? [];
   const hasVideo = Boolean(detail?.video_url);
@@ -82,6 +156,22 @@ export default function ChatPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [detail?.messages, sending]);
+
+  // Count the wait out loud. A local model answers in minutes, and a spinner
+  // with no clock on it is indistinguishable from one that has hung. The start
+  // comes from the store, so leaving the chat and coming back keeps the total
+  // honest instead of restarting it at zero.
+  const startedAt = turn?.startedAt ?? null;
+  useEffect(() => {
+    if (startedAt === null) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [startedAt]);
+
+  // Clamped, because `now` is only refreshed by the interval: the first render
+  // of a new turn would otherwise read off a timestamp taken before it began.
+  const elapsed =
+    startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000));
 
   /** The paperclip stages the file; nothing leaves the browser until send. */
   function handlePick(file: File) {
@@ -102,7 +192,9 @@ export default function ChatPage() {
     setPending(null);
     try {
       // One turn: upload, analyse (frames + the exact moment), then answer.
-      await submit(message, file, { model });
+      // The cascade picks the detector itself — Gemini first, local models
+      // behind it. There is no manual choice to get wrong.
+      await submit(message, file, { model: "auto" });
     } catch {
       toast.error(
         file
@@ -116,7 +208,11 @@ export default function ChatPage() {
     // Narrow screens stack the review panel above the conversation; wide ones
     // put it alongside. Either way there is exactly one <video> on the page, so
     // the agent's playback commands always land on the player you can see.
-    <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+    <div
+      className={`flex min-h-0 flex-1 flex-col lg:flex-row ${
+        dragging ? "cursor-col-resize select-none" : ""
+      }`}
+    >
       {/* Conversation column */}
       <div className="order-last flex min-w-0 flex-1 flex-col lg:order-first">
         <div className="flex-1 overflow-y-auto">
@@ -199,10 +295,28 @@ export default function ChatPage() {
 
           <LiveAnalysisCard />
 
-          {sending && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className="inline-block size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              Thinking — running detection can take a minute...
+          {turn && (
+            <div className="flex items-start gap-2 text-sm text-muted-foreground">
+              <span className="mt-0.5 inline-block size-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              <span className="min-w-0">
+                <span className="block">
+                  {PHASE_TEXT[turn.phase].title}
+                  <span className="ms-2 font-mono text-xs">
+                    {formatElapsed(elapsed)}
+                  </span>
+                </span>
+                <span className="block text-xs">{PHASE_TEXT[turn.phase].hint}</span>
+                {/* Long silences are normal here, but only if you know that.
+                    Say so rather than let it read as a hang — without naming
+                    which model is answering, which is not the reader's
+                    problem. */}
+                {turn.phase === "thinking" && elapsed >= 45 && (
+                  <span className="block text-xs">
+                    Still generating. A reply can take several minutes — you can
+                    open another chat meanwhile; this one will finish on its own.
+                  </span>
+                )}
+              </span>
             </div>
           )}
 
@@ -213,28 +327,6 @@ export default function ChatPage() {
       {/* Composer */}
       <div className="shrink-0 border-t bg-background">
         <div className="mx-auto w-full max-w-3xl px-4 py-3">
-          {/* Which detector the next upload is analysed with. */}
-          <div className="mb-2 flex items-center gap-1.5 overflow-x-auto">
-            <span className="shrink-0 text-xs text-muted-foreground">Analyse with</span>
-            {MODELS.map((m) => (
-              <button
-                key={m.value}
-                type="button"
-                onClick={() => setModel(m.value)}
-                title={m.hint}
-                aria-pressed={model === m.value}
-                className={[
-                  "shrink-0 rounded-full border px-2.5 py-1 text-xs transition-colors",
-                  model === m.value
-                    ? "border-primary bg-primary/10 font-medium text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                ].join(" ")}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-
           {/* The attachment, shown the way any chat shows one. A staged file
               takes precedence: it is what the next send will analyse. */}
           {pending ? (
@@ -354,19 +446,55 @@ export default function ChatPage() {
           </div>
 
           <p className="mt-1.5 text-center text-xs text-muted-foreground">
-            The agent runs YOLO and the other detectors on demand, and queries your scan
+            The agent runs the detectors on demand and queries your scan
             history. Verify anything critical against the report.
           </p>
           </div>
         </div>
       </div>
 
-      {/* Video review panel — the agent drives this player. */}
+      {/* Video review panel — the agent drives this player.
+          Two ways to make it bigger: drag the divider on its edge, or the arrow
+          in its header. Stacked layouts ignore the width and take more height
+          instead, since there is only one column to give. */}
       {panelOpen && (
         <aside
+          ref={asideRef}
           aria-label="Video review"
-          className="order-first flex max-h-[45vh] w-full shrink-0 overflow-hidden border-b bg-card lg:order-last lg:max-h-none lg:w-96 lg:border-b-0 lg:border-s"
+          style={{ "--panel-w": `${panelWidth}px` } as CSSProperties}
+          className={`relative order-first flex w-full shrink-0 overflow-hidden border-b bg-card lg:order-last lg:max-h-none lg:w-[var(--panel-w)] lg:border-b-0 lg:border-s ${
+            panelWide ? "max-h-[75vh]" : "max-h-[45vh]"
+          } ${dragging ? "" : "transition-[width,max-height] duration-200"}`}
         >
+          {/* The divider itself, made draggable. Double-click puts it back. */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Drag to resize the video panel"
+            aria-valuenow={panelWidth}
+            tabIndex={0}
+            onPointerDown={startDrag}
+            onPointerMove={onDrag}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            onDoubleClick={() => setPanelWidth(DEFAULT_PANEL_WIDTH)}
+            onKeyDown={(e) => {
+              // The panel grows leftwards, so left widens it.
+              if (e.key === "ArrowLeft") setPanelWidth(panelWidth + 32);
+              else if (e.key === "ArrowRight") setPanelWidth(panelWidth - 32);
+              else return;
+              e.preventDefault();
+            }}
+            title="Drag to resize · double-click to reset"
+            className="group absolute inset-y-0 start-0 z-20 hidden w-2 cursor-col-resize touch-none lg:block"
+          >
+            <span
+              className={`absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 transition-colors ${
+                dragging ? "bg-primary" : "bg-transparent group-hover:bg-primary/60"
+              }`}
+            />
+          </div>
+
           {/* Keyed on the source so a new upload gets a fresh, reset player. */}
           <VideoPanel key={detail?.video_url ?? "empty"} />
         </aside>

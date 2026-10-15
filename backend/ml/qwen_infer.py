@@ -141,7 +141,7 @@ def main() -> None:
     result = _parse_json(out)
     segments = result.get("segments") or []
     payload = {
-        "model_id": "Qwen2.5-VL-7B (local)",
+        "model_id": f"{MODEL_ID.split('/')[-1]} (local)",
         "violence_detected": bool(result.get("violence_detected", bool(segments))),
         "summary": str(result.get("summary", "")),
         "segments": segments,

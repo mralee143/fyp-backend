@@ -263,10 +263,17 @@ async def login(
 
 @router.get("/me")
 async def me(current_user: UserOut = Depends(get_current_user)) -> dict:
-    """Current user's identity + whether they're the admin (for the UI)."""
+    """Current user's identity + whether they're the admin (for the UI).
+
+    Carries the account's own details as well, so the profile page can render
+    from one request instead of the sidebar's identity plus a second lookup.
+    """
     return {
+        "id": current_user.id,
         "email": current_user.email,
         "is_admin": current_user.email.lower() == settings.admin_email.lower(),
+        "is_active": current_user.is_active,
+        "created_at": current_user.created_at,
     }
 
 

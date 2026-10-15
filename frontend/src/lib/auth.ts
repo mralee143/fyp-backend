@@ -1,5 +1,6 @@
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
+import { useChatStore } from "@/store/chat";
 
 /**
  * Log in against POST /auth/login.
@@ -63,9 +64,35 @@ export async function resetPassword(
   return data;
 }
 
-/** Clear the local session. */
+/**
+ * Clear the local session.
+ *
+ * The conversation store is dropped too. Logging out is a client-side
+ * navigation, not a reload, so without this the next person to sign in on the
+ * same tab would be looking at the previous user's chat list until they
+ * refreshed — and any stream still open would keep pushing to it.
+ */
 export function logout() {
+  useChatStore.getState().reset();
   useAuthStore.getState().clearAuth();
+}
+
+/**
+ * A human name for an account that only has an email.
+ *
+ * There is no name column on the user table, so the local part is the best we
+ * have: `umar.javed@x.com` reads as "Umar Javed" rather than the raw address.
+ */
+export function displayName(email?: string | null): string {
+  const local = email?.split("@")[0]?.trim();
+  if (!local) return "Your account";
+  return (
+    local
+      .split(/[._-]+/)
+      .filter(Boolean)
+      .map((part) => part[0].toUpperCase() + part.slice(1))
+      .join(" ") || local
+  );
 }
 
 /** Turn an axios error into a human-readable message from FastAPI's `detail`. */

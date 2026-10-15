@@ -18,13 +18,14 @@ fall back to running Qwen locally inside ``qwen_env`` (see qwen_chat_infer.py) �
 fully offline, but slow. That path only supports protocol (2).
 """
 
+import asyncio
 import json
 import logging
 import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, AsyncIterator, Iterable, Optional
 
 import httpx
 
@@ -434,6 +435,230 @@ def chat(
 
     text, calls = _parse_text_tool_calls(content, _tool_names(tools))
     return ChatReply(text, calls)
+
+
+# --- Streaming ---------------------------------------------------------------
+#
+# The blocking `chat()` above answers only once the whole reply exists. On local
+# weights that is minutes of a dead spinner, so the agent also has a streaming
+# path: same protocols, same parsing, but the text is handed over as it is
+# generated. See `chat_agent.stream_turn` for how a turn uses it.
+
+
+class _StreamGate:
+    """Holds back text that might still be growing into a text-protocol tool call.
+
+    Qwen announces a tool call inside the reply body — ``<tool_call>{...}``, a
+    fenced JSON block, or ``[control_video_playback action="play"]``. Streaming
+    those characters into the transcript as they arrive would flash raw protocol
+    at the user a moment before the round is recognised as a tool call. So while
+    the reply so far could still become one of those openers nothing is
+    released; once it clearly cannot, the gate opens for the rest of the round.
+    """
+
+    # Openers that mean "this is a tool call, not prose".
+    _OPENERS = ("<tool_call>", "```")
+    # A bracket call, still unclosed. Prose in brackets is released once it closes.
+    _BRACKET = re.compile(r"^\[\w*[^\]]*$")
+    # Never hold more than this — ambiguous prose must not stall the stream.
+    _MAX_HOLD = 200
+
+    def __init__(self) -> None:
+        self._buffer = ""
+        self._open = False
+        self._suppressed = False
+
+    def push(self, piece: str) -> str:
+        """Take one delta; return whatever is safe to show now (often empty)."""
+        if self._suppressed:
+            return ""
+        if self._open:
+            return piece
+        self._buffer += piece
+        head = self._buffer.lstrip()
+        if not head:
+            return ""
+        for opener in self._OPENERS:
+            if head.startswith(opener):
+                self._suppressed = True
+                self._buffer = ""
+                return ""
+            if opener.startswith(head):
+                return ""
+        if self._BRACKET.match(head) and len(head) < self._MAX_HOLD:
+            return ""
+        self._open = True
+        out, self._buffer = self._buffer, ""
+        return out
+
+    def flush(self) -> str:
+        """Release anything still held — the round turned out to be prose."""
+        if self._suppressed:
+            return ""
+        out, self._buffer = self._buffer, ""
+        self._open = True
+        return out
+
+
+def _merge_tool_call_deltas(
+    acc: dict[int, dict[str, Any]], deltas: list[dict[str, Any]]
+) -> None:
+    """Fold streamed ``tool_calls`` fragments into whole calls, keyed by index.
+
+    A streamed call arrives in pieces — the name in one chunk, its JSON
+    arguments a few characters at a time across the next several. The index is
+    the only field repeated on every fragment, so it is what identifies a call.
+    """
+    for item in deltas or []:
+        slot = acc.setdefault(
+            int(item.get("index") or 0),
+            {"id": "", "function": {"name": "", "arguments": ""}},
+        )
+        if item.get("id"):
+            slot["id"] = str(item["id"])
+        fn = item.get("function") or {}
+        if fn.get("name"):
+            slot["function"]["name"] = str(fn["name"])
+        if fn.get("arguments"):
+            slot["function"]["arguments"] += str(fn["arguments"])
+
+
+async def _stream_post(payload: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+    """Yield each decoded SSE payload from the chat-completions endpoint."""
+    url = settings.qwen_chat_base_url.rstrip("/") + "/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if settings.qwen_chat_api_key:
+        headers["Authorization"] = f"Bearer {settings.qwen_chat_api_key}"
+
+    # Generous read timeout, short connect: prompt evaluation on CPU can leave
+    # the socket silent for minutes before the first token, but a server that is
+    # not listening should be reported at once rather than after the whole
+    # inference budget has elapsed.
+    timeout = httpx.Timeout(settings.qwen_chat_timeout_s, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async with client.stream("POST", url, json=payload, headers=headers) as response:
+            if response.status_code >= 400:
+                body = (await response.aread()).decode("utf-8", "replace")
+                raise QwenChatError(
+                    f"Qwen endpoint returned {response.status_code}: {body[:300]}"
+                )
+            async for line in response.aiter_lines():
+                line = line.strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:"):].strip()
+                if data == "[DONE]":
+                    return
+                try:
+                    yield json.loads(data)
+                except json.JSONDecodeError:
+                    # A keepalive or a half line; the next one carries the token.
+                    continue
+
+
+async def chat_stream(
+    messages: list[dict[str, Any]],
+    tools: Optional[list[dict[str, Any]]] = None,
+    temperature: float = 0.2,
+    max_tokens: int = 1024,
+) -> AsyncIterator[dict[str, Any]]:
+    """Run one Qwen turn, yielding the reply as it is generated.
+
+    Yields:
+        ``{"type": "delta", "text": str}`` for each piece of prose safe to show,
+        then exactly one ``{"type": "reply", "reply": ChatReply}`` carrying the
+        authoritative scrubbed turn, including any tool calls. A caller that
+        streamed the deltas into a transcript should still replace that text
+        with the reply's, which is the cleaned version.
+
+    Raises:
+        QwenChatError: If no Qwen backend could produce a reply.
+    """
+    body: dict[str, Any] = {
+        "model": settings.qwen_chat_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+    if tools:
+        body["tools"] = tools
+
+    parts: list[str] = []
+    acc: dict[int, dict[str, Any]] = {}
+    gate = _StreamGate()
+
+    async def _attempt(request: dict[str, Any]) -> AsyncIterator[str]:
+        """Drive one request, yielding the text the gate lets through."""
+        async for chunk in _stream_post(request):
+            choices = chunk.get("choices") or []
+            if not choices:
+                continue
+            delta = choices[0].get("delta") or {}
+            if delta.get("tool_calls"):
+                _merge_tool_call_deltas(acc, delta["tool_calls"])
+            piece = delta.get("content") or ""
+            if piece:
+                parts.append(piece)
+                safe = gate.push(piece)
+                if safe:
+                    yield safe
+
+    emitted = False
+    try:
+        async for text in _attempt(body):
+            emitted = True
+            yield {"type": "delta", "text": text}
+    except QwenChatError as e:
+        # Servers that do not understand `tools` 400 on it — retry via the text
+        # protocol, which any Qwen instruct model can follow. Safe only because
+        # that rejection lands before generation, so nothing was shown yet.
+        if tools and "400" in str(e) and not emitted:
+            logger.info("Qwen endpoint rejected native tools; using text protocol")
+            parts.clear()
+            acc.clear()
+            gate = _StreamGate()
+            retry = dict(body)
+            retry.pop("tools", None)
+            retry["messages"] = _messages_for_text_protocol(messages, tools)
+            async for text in _attempt(retry):
+                yield {"type": "delta", "text": text}
+        else:
+            raise
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+        if not settings.qwen_chat_allow_local_fallback:
+            raise QwenChatError(
+                f"Cannot reach the Qwen chat endpoint at "
+                f"{settings.qwen_chat_base_url}. Start Ollama and run "
+                f"`ollama pull {settings.qwen_chat_model}`, or set "
+                f"QWEN_CHAT_BASE_URL."
+            ) from e
+        # The offline path is a subprocess that only ever returns a whole
+        # answer, so this turn arrives in one piece rather than streaming.
+        logger.warning("Qwen endpoint unreachable (%s); falling back to local qwen_env", e)
+        local_messages = _messages_for_text_protocol(messages, tools or [])
+        content = await asyncio.to_thread(_local_generate, local_messages, max_tokens)
+        text, calls = _parse_text_tool_calls(content, _tool_names(tools))
+        if not calls and text:
+            yield {"type": "delta", "text": text}
+        yield {"type": "reply", "reply": ChatReply(text, calls)}
+        return
+
+    content = "".join(parts)
+    native = _parse_native_tool_calls([acc[i] for i in sorted(acc)])
+    if native:
+        reply = ChatReply(content.strip(), native)
+    else:
+        text, calls = _parse_text_tool_calls(content, _tool_names(tools))
+        reply = ChatReply(text, calls)
+
+    # Nothing was a tool call after all — release whatever the gate still holds.
+    if not reply.tool_calls:
+        tail = gate.flush()
+        if tail:
+            yield {"type": "delta", "text": tail}
+
+    yield {"type": "reply", "reply": reply}
 
 
 def health() -> dict[str, Any]:

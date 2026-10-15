@@ -10,7 +10,14 @@ conflicts with the pinned FastAPI/pydantic stack.
 import json
 import logging
 import os
+import re
+import subprocess
+import tempfile
+import threading
 import time
+from contextvars import ContextVar
+from datetime import date
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -133,6 +140,27 @@ FILE_API_BASE = "https://generativelanguage.googleapis.com/v1beta/"
 # Matches the backend's upload cap; Files API can handle well beyond this.
 MAX_FILE_BYTES = 200 * 1024 * 1024  # 200 MB
 
+# Above this, the video is re-encoded smaller before it is uploaded.
+#
+# The Files API accepts hundreds of megabytes, but the uplink here does not:
+# a 106 MB dashcam compilation spent ten minutes on the wire and still timed
+# out, then retried three more times before the cascade gave up and handed the
+# clip to the CPU classifiers — the slowest and least accurate answer available,
+# reached the slowest possible way.
+#
+# Sending those bytes was never necessary. Gemini samples video at about one
+# frame per second, so a 30 fps 720p source is mostly detail it will never look
+# at. Re-encoding held the same 461-second timeline in 13 MB instead of 106 MB.
+#
+# Duration and frame rate are deliberately untouched: incidents come back as
+# timestamps in seconds and are replayed against the *original* file, so a
+# transcode that trimmed or resampled would land every segment in the wrong
+# place. Only resolution and bitrate are given up.
+_UPLOAD_SHRINK_ABOVE_BYTES = int(
+    float(os.getenv("GEMINI_UPLOAD_SHRINK_ABOVE_MB", "24")) * 1024 * 1024
+)
+_UPLOAD_SHRINK_HEIGHT = int(os.getenv("GEMINI_UPLOAD_SHRINK_HEIGHT", "480"))
+
 # Max seconds to wait for Gemini to finish processing an uploaded video.
 _PROCESS_TIMEOUT_S = 300
 
@@ -243,15 +271,110 @@ _RESPONSE_SCHEMA = {
 
 
 class LlmDetectionError(Exception):
-    """Raised for configuration / API / parsing failures in LLM detection."""
+    """Raised for configuration / API / parsing failures in LLM detection.
+
+    `status` carries the HTTP status when the failure came from Gemini, so the
+    key pool can tell a dead end apart from something the next key might not
+    hit. Failures with no status (a parse error, a video too large) are the
+    caller's problem and are the same on every key.
+    """
+
+    def __init__(self, message: str, status: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
-def _api_headers() -> dict:
-    return {"x-goog-api-key": settings.gemini_api_key}
+# A failure on one key that another key may not share. 503 is the one that
+# forced this: Google returns UNAVAILABLE per project, so key 1 can be refused
+# the same model key 2 is served — observed directly, 3.7-flash 503 on one key
+# and 200 on the other. 500/502/504 are the same kind of server-side blip, and
+# a 429 that is not the daily quota is a rate limit the next key has its own
+# budget for. Everything else — 400 bad request, 403 bad key, a video Gemini
+# will not read — fails identically everywhere, so it still stops the pool.
+_KEY_PORTABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+
+# --------------------------------------------------------------------------- #
+# Key pool
+#
+# GEMINI_API_KEY may hold several keys, comma- or whitespace-separated. They are
+# not load-balanced: one key is used until its *daily* allowance is gone, then
+# the next takes over. Spreading calls across keys instead would burn every
+# allowance at the same rate and leave nothing in reserve for the evening.
+#
+# Only a PerDay 429 retires a key, and only until tomorrow. A per-minute limit
+# clears on its own, so rotating on one would retire a perfectly good key over a
+# few seconds of impatience.
+# --------------------------------------------------------------------------- #
+_KEY_LOCK = threading.Lock()
+# key -> the ISO date its daily quota ran out. Compared against today, so a
+# retired key comes back by itself; the worker need not be restarted at midnight.
+_spent_on: dict[str, str] = {}
+
+
+def _configured_keys() -> list[str]:
+    """Every key in GEMINI_API_KEY, in the order they were written."""
+    return [k for k in re.split(r"[,\s]+", settings.gemini_api_key or "") if k]
+
+
+def _live_keys() -> list[str]:
+    """The configured keys that have not spent their daily quota today."""
+    today = date.today().isoformat()
+    with _KEY_LOCK:
+        return [k for k in _configured_keys() if _spent_on.get(k) != today]
+
+
+def _mark_spent(api_key: str) -> None:
+    """Retire a key for the rest of the day (Google resets at midnight Pacific)."""
+    with _KEY_LOCK:
+        _spent_on[api_key] = date.today().isoformat()
+
+
+def _is_spent(api_key: str) -> bool:
+    with _KEY_LOCK:
+        return _spent_on.get(api_key) == date.today().isoformat()
+
+
+def _key_label(api_key: str) -> str:
+    """Name a key for the log without printing the secret."""
+    keys = _configured_keys()
+    position = keys.index(api_key) + 1 if api_key in keys else 0
+    return f"key {position}/{len(keys)} (…{api_key[-4:]})"
+
+
+def _api_headers(api_key: str) -> dict:
+    return {"x-goog-api-key": api_key}
+
+
+# Wall-clock ceiling for the whole analysis, when a caller sets one.
+#
+# The per-attempt timeouts below bound a single HTTP call, not the run: four
+# attempts across two keys, each allowed 900s to upload and 600s to generate,
+# outlast the ARQ job itself. The `auto` cascade sets a deadline so a Gemini
+# that cannot finish — a stalled upload, a dead DNS — hands over to the models
+# below it instead of taking the job down with it. A ContextVar, not a global,
+# because the worker analyses two videos in two threads at once.
+_DEADLINE: ContextVar[Optional[float]] = ContextVar("gemini_deadline", default=None)
+
+
+def _budget_left() -> Optional[float]:
+    """Seconds until the caller's deadline, or None when it set none."""
+    deadline = _DEADLINE.get()
+    return None if deadline is None else deadline - time.monotonic()
+
+
+def _check_budget(what: str) -> None:
+    """Raise once the caller's deadline has passed."""
+    left = _budget_left()
+    if left is not None and left <= 0:
+        raise LlmDetectionError(
+            f"Gemini ran out of its time budget ({what}); handing over to the "
+            "next model."
+        )
 
 
 def _request_with_retry(
-    method: str, url: str, *, what: str, timeout: float, **kwargs
+    method: str, url: str, *, what: str, timeout: float, api_key: str, **kwargs
 ) -> httpx.Response:
     """Call Gemini, retrying transient failures with exponential backoff.
 
@@ -271,6 +394,9 @@ def _request_with_retry(
         url: Target URL.
         what: Human name for this leg, used in the log line.
         timeout: Per-attempt timeout in seconds.
+        api_key: The key this call authenticates with. Every leg of one
+            analysis must pass the same one — a file uploaded under one key
+            belongs to that key's project and is invisible to any other.
         **kwargs: Passed through to httpx (``json``, ``content``, ``headers``).
 
     Returns:
@@ -280,13 +406,19 @@ def _request_with_retry(
     Raises:
         LlmDetectionError: If every attempt failed at the transport level.
     """
-    headers = {**_api_headers(), **(kwargs.pop("headers", None) or {})}
+    headers = {**_api_headers(api_key), **(kwargs.pop("headers", None) or {})}
 
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         last = attempt == _MAX_ATTEMPTS
+        # A deadline shortens this attempt rather than being checked after it:
+        # a 900s upload timeout would otherwise sail past a 420s budget and only
+        # notice on the way out.
+        _check_budget(what)
+        left = _budget_left()
+        attempt_timeout = timeout if left is None else min(timeout, left)
         try:
             response = httpx.request(
-                method, url, headers=headers, timeout=timeout, **kwargs
+                method, url, headers=headers, timeout=attempt_timeout, **kwargs
             )
         except httpx.HTTPError as exc:
             if last:
@@ -301,11 +433,15 @@ def _request_with_retry(
                 return response
 
             if response.status_code == 429 and _out_of_daily_quota(response):
+                # Retire this key for the day. Retrying it is pointless, and
+                # `detect_violence_llm` reads this to decide whether another
+                # key can still answer before the cascade falls through.
+                _mark_spent(api_key)
                 logger.warning(
-                    "Gemini %s: %s — not retrying; this run falls back to the "
-                    "local models",
+                    "Gemini %s: %s on %s — not retrying with it today",
                     what,
                     _quota_hint(response),
+                    _key_label(api_key),
                 )
                 return response
 
@@ -339,14 +475,88 @@ def _request_with_retry(
             reason,
             delay,
         )
+        left = _budget_left()
+        if left is not None and delay >= left:
+            _DEADLINE.set(time.monotonic())  # nothing left to retry into
+            _check_budget(what)
         time.sleep(delay)
 
     # Unreachable: the loop either returns or raises on its final attempt.
     raise LlmDetectionError(f"Could not reach Gemini ({what}).")
 
 
-def _upload_video(video_bytes: bytes, mime_type: str) -> str:
-    """Upload the video via the resumable Files API; return its file_uri once ACTIVE."""
+def _shrink_for_upload(video_bytes: bytes, mime_type: str) -> bytes:
+    """Re-encode an oversized video small enough to actually upload.
+
+    Best-effort: any failure returns the original bytes, because a slow upload
+    is still better than no analysis. Returns the original too when the encode
+    fails to make it smaller, which happens on clips that were already tight.
+    """
+    if len(video_bytes) <= _UPLOAD_SHRINK_ABOVE_BYTES:
+        return video_bytes
+
+    try:
+        import imageio_ffmpeg
+    except ImportError:
+        logger.info("Cannot shrink upload: imageio_ffmpeg is not installed")
+        return video_bytes
+
+    suffix = ".mp4" if "mp4" in mime_type else Path(mime_type).suffix or ".mp4"
+    tmp_dir = Path(tempfile.mkdtemp(prefix="gemini_shrink_"))
+    src = tmp_dir / f"src{suffix}"
+    dst = tmp_dir / "small.mp4"
+    try:
+        src.write_bytes(video_bytes)
+        proc = subprocess.run(
+            [
+                imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "error",
+                "-y", "-i", str(src),
+                # -2 keeps the aspect ratio while forcing an even width, which
+                # libx264 requires with yuv420p.
+                "-vf", f"scale=-2:{_UPLOAD_SHRINK_HEIGHT}",
+                "-c:v", "libx264", "-crf", "32", "-preset", "veryfast",
+                "-an",  # the prompt asks about what is visible, never audio
+                "-movflags", "+faststart", str(dst),
+            ],
+            capture_output=True,
+            timeout=900,
+        )
+        if proc.returncode != 0 or not dst.exists():
+            logger.info(
+                "Upload shrink failed (rc=%s); sending the original",
+                proc.returncode,
+            )
+            return video_bytes
+        smaller = dst.read_bytes()
+        if not smaller or len(smaller) >= len(video_bytes):
+            return video_bytes
+        logger.info(
+            "Shrank upload %.1f MB -> %.1f MB before sending to Gemini",
+            len(video_bytes) / 1048576,
+            len(smaller) / 1048576,
+        )
+        return smaller
+    except Exception as exc:
+        logger.info("Upload shrink skipped (%s); sending the original", exc)
+        return video_bytes
+    finally:
+        for f in (src, dst):
+            try:
+                f.unlink(missing_ok=True)
+            except OSError:
+                pass
+        try:
+            tmp_dir.rmdir()
+        except OSError:
+            pass
+
+
+def _upload_video(video_bytes: bytes, mime_type: str, api_key: str) -> str:
+    """Upload the video via the resumable Files API; return its file_uri once ACTIVE.
+
+    The returned URI is only usable by `api_key` — Files API uploads live in the
+    key's own project, so the analysis that follows must use this same key.
+    """
     n = len(video_bytes)
 
     # 1) Start a resumable upload session.
@@ -354,6 +564,7 @@ def _upload_video(video_bytes: bytes, mime_type: str) -> str:
         "POST",
         UPLOAD_START_URL,
         what="upload init",
+        api_key=api_key,
         headers={
             "X-Goog-Upload-Protocol": "resumable",
             "X-Goog-Upload-Command": "start",
@@ -366,7 +577,8 @@ def _upload_video(video_bytes: bytes, mime_type: str) -> str:
     )
     if start.status_code != 200:
         raise LlmDetectionError(
-            f"Gemini upload init error {start.status_code}: {start.text[:250]}"
+            f"Gemini upload init error {start.status_code}: {start.text[:250]}",
+            status=start.status_code,
         )
     upload_url = start.headers.get("x-goog-upload-url")
     if not upload_url:
@@ -380,6 +592,7 @@ def _upload_video(video_bytes: bytes, mime_type: str) -> str:
         "POST",
         upload_url,
         what="upload",
+        api_key=api_key,
         headers={
             "Content-Length": str(n),
             "X-Goog-Upload-Offset": "0",
@@ -390,7 +603,8 @@ def _upload_video(video_bytes: bytes, mime_type: str) -> str:
     )
     if up.status_code != 200:
         raise LlmDetectionError(
-            f"Gemini upload error {up.status_code}: {up.text[:250]}"
+            f"Gemini upload error {up.status_code}: {up.text[:250]}",
+            status=up.status_code,
         )
 
     info = up.json().get("file", {})
@@ -406,11 +620,16 @@ def _upload_video(video_bytes: bytes, mime_type: str) -> str:
         time.sleep(3)
         waited += 3
         g = _request_with_retry(
-            "GET", FILE_API_BASE + name, what="file status", timeout=60.0
+            "GET",
+            FILE_API_BASE + name,
+            what="file status",
+            timeout=60.0,
+            api_key=api_key,
         )
         if g.status_code != 200:
             raise LlmDetectionError(
-                f"Gemini file status error {g.status_code}: {g.text[:200]}"
+                f"Gemini file status error {g.status_code}: {g.text[:200]}",
+                status=g.status_code,
             )
         state = g.json().get("state")
 
@@ -421,14 +640,40 @@ def _upload_video(video_bytes: bytes, mime_type: str) -> str:
     return uri
 
 
-def detect_violence_llm(video_bytes: bytes, mime_type: str) -> dict:
+def detect_violence_llm(
+    video_bytes: bytes, mime_type: str, budget_s: Optional[float] = None
+) -> dict:
     """
     Analyze a video for violence using Gemini (via the Files API for large videos).
+
+    Tries each configured key in turn, moving on only when one has spent its
+    *daily* allowance — see the key-pool notes above. Every other failure is
+    raised immediately: a second key cannot fix a video Gemini refuses to read,
+    and trying makes one bad upload cost two allowances instead of one.
+
+    Args:
+        video_bytes: The clip to analyse.
+        mime_type: Its MIME type.
+        budget_s: Wall-clock ceiling for the whole call, keys and retries
+            included. The `auto` cascade passes one so a Gemini that cannot
+            finish gives way to the next model; a directly requested `llm` run
+            passes none and is bounded only by the per-attempt timeouts.
 
     Returns a dict matching LlmDetectionResponse:
         {model_id, violence_detected, summary, segments: [...]}
     Raises LlmDetectionError on misconfiguration, size, API, or parse failures.
     """
+    token = _DEADLINE.set(
+        None if budget_s is None else time.monotonic() + budget_s
+    )
+    try:
+        return _detect_across_keys(video_bytes, mime_type)
+    finally:
+        _DEADLINE.reset(token)
+
+
+def _detect_across_keys(video_bytes: bytes, mime_type: str) -> dict:
+    """`detect_violence_llm`'s body, with the deadline already in place."""
     if not settings.llm_enabled:
         raise LlmDetectionError(
             "Gemini is not configured. Add GEMINI_API_KEY to the backend .env."
@@ -439,7 +684,46 @@ def detect_violence_llm(video_bytes: bytes, mime_type: str) -> dict:
             f"Max is {MAX_FILE_BYTES // (1024 * 1024)} MB."
         )
 
-    file_uri = _upload_video(video_bytes, mime_type)
+    keys = _live_keys()
+    if not keys:
+        raise LlmDetectionError(
+            f"All {len(_configured_keys())} Gemini key(s) have used up today's "
+            "quota. They reset at midnight Pacific; add another key to "
+            "GEMINI_API_KEY (comma-separated) to carry on before then."
+        )
+
+    last: LlmDetectionError | None = None
+    for api_key in keys:
+        # Handing a spent key's video to the next one is only worth it if there
+        # is time left to actually analyse it.
+        _check_budget("starting the next key")
+        try:
+            return _detect_with_key(video_bytes, mime_type, api_key)
+        except LlmDetectionError as exc:
+            last = exc
+            if _is_spent(api_key):
+                reason = "is out of daily quota"
+            elif exc.status in _KEY_PORTABLE_STATUSES:
+                reason = f"was refused with HTTP {exc.status}"
+            else:
+                # Same answer on every key — a second one only wastes its
+                # allowance confirming it.
+                raise
+            logger.info(
+                "%s %s; handing this video to the next key",
+                _key_label(api_key),
+                reason,
+            )
+
+    # No key could answer. The cascade takes it from here.
+    raise last or LlmDetectionError("No Gemini key could answer.")
+
+
+def _detect_with_key(video_bytes: bytes, mime_type: str, api_key: str) -> dict:
+    """One full analysis — upload and generate — against a single key."""
+    file_uri = _upload_video(
+        _shrink_for_upload(video_bytes, mime_type), mime_type, api_key
+    )
 
     payload = {
         "contents": [
@@ -458,7 +742,7 @@ def detect_violence_llm(video_bytes: bytes, mime_type: str) -> dict:
 
     url = GENERATE_URL.format(model=settings.gemini_model)
     resp = _request_with_retry(
-        "POST", url, what="generate", json=payload, timeout=600.0
+        "POST", url, what="generate", json=payload, timeout=600.0, api_key=api_key
     )
 
     if resp.status_code != 200:
@@ -467,7 +751,10 @@ def detect_violence_llm(video_bytes: bytes, mime_type: str) -> dict:
         # the accurate model has been switched off by billing rather than bug.
         if resp.status_code == 429 and (hint := _quota_hint(resp)):
             raise LlmDetectionError(f"Gemini quota exceeded — {hint}.")
-        raise LlmDetectionError(f"Gemini API error {resp.status_code}: {resp.text[:300]}")
+        raise LlmDetectionError(
+            f"Gemini API error {resp.status_code}: {resp.text[:300]}",
+            status=resp.status_code,
+        )
 
     try:
         data = resp.json()

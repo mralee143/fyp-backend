@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PlusIcon, SearchIcon, Trash2Icon, VideoIcon } from "lucide-react";
+import {
+  LoaderIcon,
+  PlusIcon,
+  SearchIcon,
+  Trash2Icon,
+  VideoIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { useChatStore } from "@/store/chat";
@@ -10,15 +16,25 @@ import { useChatStore } from "@/store/chat";
 /**
  * The "Recent chats" section of the app sidebar.
  *
- * Rendered by AppShell only on `/chat`. It reads from the shared chat store, so
- * the list, the open conversation and the page body never disagree.
+ * Rendered by AppShell on every signed-in route, so the conversation history is
+ * one click away from anywhere. It reads from the shared chat store, so the
+ * list, the open conversation and the page body never disagree.
+ *
+ * A conversation mid-turn carries its own spinner. Turns run per session, so
+ * several can be thinking at once and the row is the only place that says which.
  */
 
-export function ChatSessionsPanel() {
+export function ChatSessionsPanel({
+  /** Called whenever a click here navigates — dismisses the mobile drawer. */
+  onNavigate,
+}: {
+  onNavigate?: () => void;
+}) {
   const router = useRouter();
 
   const sessions = useChatStore((s) => s.sessions);
   const activeId = useChatStore((s) => s.activeId);
+  const busy = useChatStore((s) => s.busy);
   const health = useChatStore((s) => s.health);
   const init = useChatStore((s) => s.init);
   const open = useChatStore((s) => s.open);
@@ -48,6 +64,7 @@ export function ChatSessionsPanel() {
         <button
           type="button"
           onClick={() => {
+            onNavigate?.();
             newChat()
               .then(() => router.push("/chat"))
               .catch(() => toast.error("Could not start a new chat."));
@@ -95,11 +112,13 @@ export function ChatSessionsPanel() {
           <ul className="flex flex-col gap-0.5">
             {visible.map((session) => {
               const current = session.id === activeId;
+              const thinking = Boolean(busy[session.id]);
               return (
                 <li key={session.id} className="group/item relative">
                   <button
                     type="button"
                     onClick={() => {
+                      onNavigate?.();
                       open(session.id).catch(() =>
                         toast.error("Could not open that conversation.")
                       );
@@ -114,21 +133,31 @@ export function ChatSessionsPanel() {
                   >
                     {session.video_name && <VideoIcon className="size-3.5 shrink-0" />}
                     <span className="truncate">{session.title}</span>
+                    {thinking && (
+                      <LoaderIcon
+                        aria-label="Thinking"
+                        className="ms-auto size-3.5 shrink-0 animate-spin text-primary"
+                      />
+                    )}
                   </button>
 
-                  <button
-                    type="button"
-                    aria-label={`Delete ${session.title}`}
-                    title="Delete chat"
-                    onClick={() => {
-                      remove(session.id).catch(() =>
-                        toast.error("Could not delete that chat.")
-                      );
-                    }}
-                    className="absolute end-1 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/item:opacity-100"
-                  >
-                    <Trash2Icon className="size-3.5" />
-                  </button>
+                  {/* Deleting a chat mid-turn would 404 the reply on its way
+                      back, so the option only appears once it has answered. */}
+                  {!thinking && (
+                    <button
+                      type="button"
+                      aria-label={`Delete ${session.title}`}
+                      title="Delete chat"
+                      onClick={() => {
+                        remove(session.id).catch(() =>
+                          toast.error("Could not delete that chat.")
+                        );
+                      }}
+                      className="absolute end-1 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/item:opacity-100"
+                    >
+                      <Trash2Icon className="size-3.5" />
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -148,12 +177,15 @@ export function ChatSessionsPanel() {
                   : "bg-destructive",
             ].join(" ")}
           />
+          {/* The dot carries the state; the label says what it means for the
+              reader. It used to print the model id, which tells them nothing
+              they can act on and dates the product every time we switch. */}
           <span className="truncate">
             {health.online
-              ? health.model
+              ? "Agent ready"
               : health.local_fallback
-                ? "Qwen offline — local fallback"
-                : "Qwen offline"}
+                ? "Agent running locally — replies are slower"
+                : "Agent offline"}
           </span>
         </div>
       )}

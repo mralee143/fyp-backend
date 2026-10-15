@@ -101,24 +101,34 @@ async def store_incident_frame(
     if frame is None:
         return None
 
-    # Timestamp-keyed, so a backfill of a partially-captured incident cannot
-    # collide with the frames already stored for it.
+    # Timestamp-keyed, so frames captured at different seconds within one
+    # incident never collide. Re-capturing the SAME second does collide, which
+    # is exactly what a retried job does, so this upserts rather than creates —
+    # matching how worker.py stores sampled frames against the same unique
+    # `object_key`.
     object_key = f"frames/{video.id}/incidents/{segment.id}_{int(second * 100):07d}.jpg"
     await media_store.put_bytes(object_key, frame.jpeg, "image/jpeg")
-    return await prisma.image.create(
+    frame_data = {
+        "generatedFilename": f"incident_{segment.id}_{int(second * 100):07d}.jpg",
+        "mimeType": "image/jpeg",
+        "fileSize": len(frame.jpeg),
+        "width": frame.width,
+        "height": frame.height,
+        "capturedAtSeconds": round(float(second), 2),
+        "caption": segment.description or None,
+    }
+    return await prisma.image.upsert(
+        where={"objectKey": object_key},
         data={
-            "kind": "THUMBNAIL",
-            "videoId": video.id,
-            "segmentId": segment.id,
-            "objectKey": object_key,
-            "generatedFilename": f"incident_{segment.id}_{int(second * 100):07d}.jpg",
-            "mimeType": "image/jpeg",
-            "fileSize": len(frame.jpeg),
-            "width": frame.width,
-            "height": frame.height,
-            "capturedAtSeconds": round(float(second), 2),
-            "caption": segment.description or None,
-        }
+            "create": {
+                "kind": "THUMBNAIL",
+                "videoId": video.id,
+                "segmentId": segment.id,
+                "objectKey": object_key,
+                **frame_data,
+            },
+            "update": frame_data,
+        },
     )
 
 

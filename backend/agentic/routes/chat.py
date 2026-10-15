@@ -11,6 +11,8 @@ the life of the conversation, because the agent may re-analyse them with a
 different model several turns later.
 """
 
+import asyncio
+import json
 import logging
 import os
 import uuid
@@ -27,6 +29,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
 from prisma import Prisma
 
 from middleware.auth import get_current_user
@@ -104,10 +107,34 @@ async def get_chat_session(
     current_user: UserOut = Depends(get_current_user),
     prisma: Prisma = Depends(get_prisma),
 ) -> ChatSessionDetail:
-    """One conversation with its full message history."""
+    """One conversation with its full message history.
+
+    Carries the live state of the session's analysis job when one is recorded,
+    so a chat reopened after a reload can tell "still running" apart from
+    "finished" — the distinction the browser used to hold on its own, and lose
+    the moment you navigated away.
+    """
     session = await _require_session(prisma, current_user.id, session_id)
     messages = await chat_store.get_messages(prisma, session_id)
-    return ChatSessionDetail.model_validate({**session, "messages": messages})
+
+    job_status: Optional[str] = None
+    job_progress: Optional[int] = None
+    if session.get("job_id"):
+        job = await prisma.analysisjob.find_unique(
+            where={"publicId": session["job_id"]}
+        )
+        if job:
+            job_status = job.status
+            job_progress = job.progress
+
+    return ChatSessionDetail.model_validate(
+        {
+            **session,
+            "messages": messages,
+            "job_status": job_status,
+            "job_progress": job_progress,
+        }
+    )
 
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -216,6 +243,23 @@ async def attach_chat_video(
         queries=queries,
     )
 
+    # Persist the job handle. Returning it only in the response would leave the
+    # link between chat and run in one browser tab, so navigating away would
+    # lose the analysis entirely — the run continues, but nothing can find it.
+    await chat_store.set_session_job(prisma, session_id, job["job_id"] if job else None)
+
+    if not job:
+        # Nothing was queued, so no worker will ever write a result here. Say so
+        # in the conversation rather than leaving the UI on a spinner that can
+        # never resolve.
+        await chat_store.add_message(
+            prisma,
+            session_id,
+            "assistant",
+            "I couldn't queue the analysis for this video. The upload is saved — "
+            "ask me to analyse it and I'll run the detectors directly.",
+        )
+
     return ChatVideoResponse(
         video_name=file.filename,
         video_url=video_url,
@@ -318,3 +362,103 @@ async def send_chat_message(
         prisma, current_user.id, session, payload.message.strip()
     )
     return ChatTurnResponse.model_validate(result)
+
+
+# How long the stream may sit silent before a comment frame goes out. Prompt
+# evaluation on CPU runs for minutes without producing a token, and an idle
+# connection is what proxies and browsers eventually give up on.
+SSE_KEEPALIVE_S = 15.0
+
+
+def _sse(event: dict) -> str:
+    """Render one event as a Server-Sent Events frame."""
+    return f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
+
+
+@router.post("/sessions/{session_id}/messages/stream")
+async def stream_chat_message(
+    session_id: int,
+    payload: ChatMessageIn,
+    current_user: UserOut = Depends(get_current_user),
+    prisma: Prisma = Depends(get_prisma),
+) -> StreamingResponse:
+    """Send a message and watch the agent's reply as it is written.
+
+    Exactly the turn ``POST /messages`` runs — the same tools, the same text,
+    the same rows persisted — delivered as Server-Sent Events instead of one
+    response at the end. On local weights a turn takes minutes, nearly all of
+    it after the first token, so this is the difference between a reply that
+    appears as it is composed and a spinner that sits still until it is done.
+
+    Event frames, each a JSON object on a ``data:`` line:
+
+    - ``{"type": "delta", "text": ...}`` — more of the reply.
+    - ``{"type": "reset"}`` — discard the text streamed so far; it turned out to
+      be the preamble of a tool call, or the backend died mid-sentence.
+    - ``{"type": "tool_started", "name": ...}`` — a tool is running now.
+    - ``{"type": "tool", "name", "arguments", "result"}`` — a finished tool call
+      and the card for it.
+    - ``{"type": "done", "result": {...}}`` — last frame, carrying the
+      authoritative reply. Take the transcript's final text from here: deltas
+      are a live preview, this is the cleaned, persisted version.
+    """
+    session = await _require_session(prisma, current_user.id, session_id)
+    message = payload.message.strip()
+
+    async def events():
+        # The turn runs in its own task feeding a queue, so the response can
+        # emit a keepalive while the model is still silent. Racing the
+        # generator directly would mean cancelling it on every quiet interval.
+        queue: asyncio.Queue = asyncio.Queue()
+
+        async def produce() -> None:
+            try:
+                async for event in chat_agent.safe_stream_turn(
+                    prisma, current_user.id, session, message
+                ):
+                    await queue.put(event)
+            except Exception as e:  # noqa: BLE001 - the stream must still close cleanly
+                logger.exception("chat stream failed for session %s", session_id)
+                await queue.put({"type": "reset"})
+                await queue.put(
+                    {
+                        "type": "done",
+                        "result": {
+                            "reply": f"That turn failed: {e}",
+                            "tool_calls": [],
+                            "scan_id": session.get("last_scan_id"),
+                            "error": True,
+                        },
+                    }
+                )
+            finally:
+                await queue.put(None)
+
+        task = asyncio.create_task(produce())
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=SSE_KEEPALIVE_S)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                if event is None:
+                    break
+                yield _sse(event)
+        finally:
+            # The client hung up, or we are done — either way the turn should
+            # not keep generating into a queue nobody reads.
+            task.cancel()
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Nginx buffers proxied responses by default, which would hold every
+            # token back until the turn ended — exactly what this endpoint
+            # exists to prevent.
+            "X-Accel-Buffering": "no",
+        },
+    )

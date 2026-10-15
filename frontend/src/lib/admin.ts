@@ -2,8 +2,12 @@ import { api } from "@/lib/api";
 import type { ScanDetail } from "@/lib/detection";
 
 export interface Me {
+  id: number;
   email: string;
   is_admin: boolean;
+  is_active: boolean;
+  /** ISO timestamp the account was created — "member since" on the profile. */
+  created_at: string;
 }
 
 export interface AdminStats {

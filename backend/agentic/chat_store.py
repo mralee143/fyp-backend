@@ -46,11 +46,54 @@ _DDL = (
     "CREATE INDEX IF NOT EXISTS agent_chat_messages_session_id_idx ON agent_chat_messages (session_id)",
 )
 
+# Repairs for databases whose tables were created before these columns and
+# constraints existed. `CREATE TABLE IF NOT EXISTS` above is a no-op once the
+# table is present -- and `prisma db push` creates both tables from
+# schema.prisma, where AgentChatMessage carries a plain `sessionId Int` with no
+# relation. Whichever ran first wins, so the DDL's own FK may never have been
+# applied. These statements are idempotent and run on every startup.
+_MIGRATIONS = (
+    # Links a session to the streamed analysis job queued for its video.
+    # Without it the job handle is returned to the browser and stored nowhere,
+    # so navigating away from a chat loses all track of a run in flight.
+    "ALTER TABLE agent_chat_sessions ADD COLUMN IF NOT EXISTS job_id TEXT",
+    # Messages whose session is already gone. They are unreachable through any
+    # endpoint (every read is scoped by session), so they are pure residue --
+    # and the FK below cannot be created while they exist.
+    "DELETE FROM agent_chat_messages m WHERE NOT EXISTS "
+    "(SELECT 1 FROM agent_chat_sessions s WHERE s.id = m.session_id)",
+)
+
+# Added separately: adding a constraint is not `IF NOT EXISTS`-able before
+# PostgreSQL 17, so this checks the catalogue first.
+_FK_REPAIR = """
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'agent_chat_messages_session_id_fkey'
+          AND conrelid = 'agent_chat_messages'::regclass
+    ) THEN
+        ALTER TABLE agent_chat_messages
+            ADD CONSTRAINT agent_chat_messages_session_id_fkey
+            FOREIGN KEY (session_id) REFERENCES agent_chat_sessions(id)
+            ON DELETE CASCADE;
+    END IF;
+END $$
+"""
+
 
 async def ensure_chat_tables(prisma: Any) -> None:
     """Create the chat tables if they don't exist. Safe to call every startup."""
     for statement in _DDL:
         await prisma.execute_raw(statement)
+    for statement in _MIGRATIONS:
+        await prisma.execute_raw(statement)
+    # Never fatal: a missing cascade degrades cleanup, it does not break chat.
+    try:
+        await prisma.execute_raw(_FK_REPAIR)
+    except Exception as exc:  # noqa: BLE001 - diagnostic only
+        logger.warning("Could not add agent_chat_messages FK: %s", exc)
 
 
 # --------------------------------------------------------------------------
@@ -62,7 +105,8 @@ async def create_session(prisma: Any, user_id: int, title: str = "New chat") -> 
     """Create a chat session and return it."""
     rows = await prisma.query_raw(
         "INSERT INTO agent_chat_sessions (user_id, title) VALUES ($1, $2) "
-        "RETURNING id, title, video_name, video_url, last_scan_id, created_at, updated_at",
+        "RETURNING id, title, video_name, video_url, last_scan_id, job_id, "
+        "created_at, updated_at",
         user_id,
         title,
     )
@@ -72,7 +116,7 @@ async def create_session(prisma: Any, user_id: int, title: str = "New chat") -> 
 async def list_sessions(prisma: Any, user_id: int, limit: int = 50) -> list[dict]:
     """The user's sessions, newest activity first."""
     return await prisma.query_raw(
-        "SELECT s.id, s.title, s.video_name, s.video_url, s.last_scan_id, "
+        "SELECT s.id, s.title, s.video_name, s.video_url, s.last_scan_id, s.job_id, "
         "s.created_at, s.updated_at, "
         "(SELECT COUNT(*)::int FROM agent_chat_messages m WHERE m.session_id = s.id) AS message_count "
         "FROM agent_chat_sessions s WHERE s.user_id = $1 "
@@ -86,7 +130,7 @@ async def get_session(prisma: Any, user_id: int, session_id: int) -> Optional[di
     """Fetch one session scoped to its owner (None when not found)."""
     rows = await prisma.query_raw(
         "SELECT id, user_id, title, video_path, video_name, video_url, "
-        "last_scan_id, created_at, updated_at "
+        "last_scan_id, job_id, created_at, updated_at "
         "FROM agent_chat_sessions WHERE id = $1 AND user_id = $2",
         session_id,
         user_id,
@@ -107,13 +151,32 @@ async def delete_session(prisma: Any, user_id: int, session_id: int) -> bool:
 async def set_session_video(
     prisma: Any, session_id: int, path: str, name: str, url: str
 ) -> None:
-    """Attach an uploaded video to the session (replaces any previous one)."""
+    """Attach an uploaded video to the session (replaces any previous one).
+
+    `last_scan_id` and `job_id` describe the video being replaced, so both are
+    cleared here. Leaving them would let the chat answer questions about the
+    OLD footage while showing the new file, and would leave the UI watching a
+    job belonging to a video that is no longer attached.
+    """
     await prisma.execute_raw(
         "UPDATE agent_chat_sessions SET video_path = $1, video_name = $2, video_url = $3, "
-        "updated_at = NOW() WHERE id = $4",
+        "last_scan_id = NULL, job_id = NULL, updated_at = NOW() WHERE id = $4",
         path,
         name,
         url,
+        session_id,
+    )
+
+
+async def set_session_job(prisma: Any, session_id: int, job_id: Optional[str]) -> None:
+    """Remember the analysis job queued for this session's current video.
+
+    This is what lets a chat reopened in a new page load find the run still in
+    flight, instead of losing it with the browser state that queued it.
+    """
+    await prisma.execute_raw(
+        "UPDATE agent_chat_sessions SET job_id = $1, updated_at = NOW() WHERE id = $2",
+        job_id,
         session_id,
     )
 

@@ -87,7 +87,14 @@ class Settings(BaseSettings):
     otp_expiry_minutes: int = Field(default=10, description="Minutes an email OTP stays valid")
 
     # Gemini (LLM/VLM) video violence detection
-    gemini_api_key: str = Field(default="", description="Google Gemini API key (aistudio.google.com)")
+    gemini_api_key: str = Field(
+        default="",
+        description=(
+            "Google Gemini API key (aistudio.google.com). Several may be given, "
+            "comma-separated: each is used until its daily quota is spent, then "
+            "the next takes over until midnight Pacific"
+        ),
+    )
     gemini_model: str = Field(
         # A floating alias, not a pinned version: Google retires numbered models
         # and the API then 404s, which this pipeline can only report as "no
@@ -126,6 +133,34 @@ class Settings(BaseSettings):
         description=(
             "When the chat endpoint is unreachable, fall back to running Qwen "
             "locally in `qwen_env` as a subprocess (offline but slow)."
+        ),
+    )
+
+    # Gemini's slice of an `auto` run
+    auto_gemini_timeout_seconds: int = Field(
+        default=420,
+        description=(
+            "Wall-clock ceiling on the Gemini stage inside `auto`, keys and "
+            "retries included. Its per-attempt timeouts (900s upload, 600s "
+            "generate) can otherwise outlast JOB_TIMEOUT_SECONDS and leave "
+            "nothing for the models below it."
+        ),
+    )
+
+    # Qwen2.5-VL video stage inside the `auto` cascade
+    auto_qwen_enabled: bool = Field(
+        default=True,
+        description=(
+            "Run the local Qwen2.5-VL stage in `auto` when Gemini cannot answer "
+            "(no key, or the daily quota is used up)."
+        ),
+    )
+    auto_qwen_timeout_seconds: int = Field(
+        default=600,
+        description=(
+            "Budget for the Qwen stage inside `auto`. It is a subprocess on CPU "
+            "and can outlast the whole job, so past this the cascade drops to "
+            "the local classifiers instead of letting ARQ time the job out."
         ),
     )
 

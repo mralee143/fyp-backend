@@ -1,5 +1,6 @@
 import type { AxiosProgressEvent } from "axios";
 import { api } from "@/lib/api";
+import { getToken, useAuthStore } from "@/store/auth";
 
 /**
  * Client for the Qwen agent chatbot (`/chat` on the backend).
@@ -38,6 +39,15 @@ export interface ChatSessionDetail {
   video_name?: string | null;
   video_url?: string | null;
   last_scan_id?: number | null;
+  /**
+   * Analysis job queued for the attached video. The server persists it, so a
+   * conversation reopened in a new page load can rejoin a run that is still
+   * going — the handle no longer dies with the tab that started the upload.
+   */
+  job_id?: string | null;
+  /** Live status of `job_id`: QUEUED | RUNNING | SUCCEEDED | FAILED | CANCELLED. */
+  job_status?: string | null;
+  job_progress?: number | null;
   created_at: string;
   updated_at: string;
   messages: ChatMessage[];
@@ -247,4 +257,106 @@ export async function sendMessage(
     { timeout: 0 }
   );
   return data;
+}
+
+/** One frame from the streaming turn endpoint. */
+export type ChatStreamEvent =
+  | { type: "delta"; text: string }
+  | { type: "reset" }
+  | { type: "tool_started"; name: string }
+  | {
+      type: "tool";
+      name: string;
+      arguments: Record<string, unknown>;
+      result: ToolResult;
+    }
+  | { type: "done"; result: ChatTurn };
+
+/**
+ * Send a message and receive the reply as it is written.
+ *
+ * The same turn as {@link sendMessage} — it persists the same rows and ends
+ * with the same payload — but the text arrives token by token instead of after
+ * the whole thing is generated. That wait is minutes on local weights, so this
+ * is what makes the chat feel answered rather than hung.
+ *
+ * `onEvent` sees every frame; the resolved value is the authoritative turn from
+ * the final `done` frame. Treat the streamed deltas as a live preview and the
+ * returned `reply` as the text to keep — it is the cleaned, persisted version.
+ *
+ * Uses `fetch` rather than the shared axios instance because only `fetch`
+ * exposes the response body as a stream; the auth header and the 401 handling
+ * the interceptors would have applied are done here instead.
+ */
+export async function streamMessage(
+  sessionId: number,
+  message: string,
+  onEvent: (event: ChatStreamEvent) => void,
+  signal?: AbortSignal
+): Promise<ChatTurn> {
+  const baseURL = api.defaults.baseURL ?? "";
+  const token = getToken();
+
+  const response = await fetch(
+    `${baseURL}/chat/sessions/${sessionId}/messages/stream`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ message }),
+      signal,
+    }
+  );
+
+  if (response.status === 401) {
+    useAuthStore.getState().clearAuth();
+    if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      window.location.href = "/login";
+    }
+    throw new Error("Session expired.");
+  }
+  if (!response.ok || !response.body) {
+    throw new Error(`The agent stream failed (HTTP ${response.status}).`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let final: ChatTurn | null = null;
+
+  // SSE frames are separated by a blank line, and a single read can land
+  // mid-frame, so whatever follows the last blank line is kept for next time.
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+
+    let split: number;
+    while ((split = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, split);
+      buffer = buffer.slice(split + 2);
+      for (const line of frame.split("\n")) {
+        // Anything else is a comment — the server's keepalive, which exists
+        // only to hold the connection open while the model is still silent.
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice("data:".length).trim();
+        if (!payload) continue;
+        let event: ChatStreamEvent;
+        try {
+          event = JSON.parse(payload) as ChatStreamEvent;
+        } catch {
+          continue;
+        }
+        if (event.type === "done") final = event.result;
+        onEvent(event);
+      }
+    }
+  }
+
+  if (!final) {
+    throw new Error("The reply stream ended before the agent finished.");
+  }
+  return final;
 }

@@ -29,19 +29,6 @@ import {
  * rather than a spinner.
  */
 
-const MODELS: { value: DetectionModel; label: string; hint: string }[] = [
-  {
-    value: "auto",
-    label: "Auto",
-    hint: "All six models in turn — best coverage, slowest",
-  },
-  { value: "yolo", label: "Weapons", hint: "Fast, local: guns, knives, grenades" },
-  { value: "owlv2", label: "Objects", hint: "Zero-shot: describe what to find" },
-  { value: "llm", label: "Gemini", hint: "Understands context and harassment" },
-  { value: "action", label: "Actions", hint: "Fighting, robbery, accidents" },
-  { value: "qwen", label: "Qwen (local)", hint: "Offline, slow but thorough" },
-];
-
 function categoryClasses(category: string): string {
   switch (category) {
     case "theft":
@@ -67,8 +54,8 @@ export function LiveAnalysis() {
   const previewUrlRef = useRef<string | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
-  const [model, setModel] = useState<DetectionModel>("auto");
-  const [queries, setQueries] = useState("");
+  // Fixed: the cascade chooses the detector, so there is nothing to pick.
+  const model: DetectionModel = "auto";
   const [dragging, setDragging] = useState(false);
 
   const [jobId, setJobId] = useState<string | null>(null);
@@ -76,7 +63,6 @@ export function LiveAnalysis() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState<string | null>(null);
-  const [message, setMessage] = useState<string>("");
   const [frames, setFrames] = useState<JobFrame[]>([]);
   const [segments, setSegments] = useState<JobSegment[]>([]);
   const [finished, setFinished] = useState<"ok" | "failed" | null>(null);
@@ -115,7 +101,6 @@ export function LiveAnalysis() {
     setProgress(0);
     setUploadPercent(0);
     setStage(null);
-    setMessage("");
     setFrames([]);
     setSegments([]);
     setFinished(null);
@@ -138,7 +123,6 @@ export function LiveAnalysis() {
   const handleEvent = useCallback((event: JobEvent) => {
     setProgress(event.progress ?? 0);
     setStage(event.stage);
-    if (event.message) setMessage(event.message);
   }, []);
 
   async function start() {
@@ -151,7 +135,7 @@ export function LiveAnalysis() {
     try {
       const job = await createJob(
         file,
-        { model, queries: queries || undefined },
+        { model },
         setUploadPercent
       );
 
@@ -181,7 +165,9 @@ export function LiveAnalysis() {
         onDone: async (event) => {
           if (event.event === "job.failed") {
             setFinished("failed");
-            toast.error(event.message ?? "Analysis failed.");
+            // Fixed wording: the event's own message is written for the log,
+            // not for a reader, and can name a model or an HTTP status.
+            toast.error("Analysis failed.");
             return;
           }
           setFinished("ok");
@@ -246,41 +232,6 @@ export function LiveAnalysis() {
         )}
       </div>
 
-      {/* ---- model ---- */}
-      <div>
-        <p className="text-sm font-medium">Detection model</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {MODELS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              disabled={running}
-              onClick={() => setModel(option.value)}
-              title={option.hint}
-              className={`rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 ${
-                model === option.value
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-muted-foreground/25 hover:bg-muted"
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <p className="mt-1.5 text-xs text-muted-foreground">
-          {MODELS.find((m) => m.value === model)?.hint}
-        </p>
-        {model === "owlv2" && (
-          <input
-            value={queries}
-            onChange={(e) => setQueries(e.target.value)}
-            disabled={running}
-            placeholder="a gun, a knife, a backpack"
-            className="mt-3 w-full rounded-lg border bg-background px-3 py-2 text-sm"
-          />
-        )}
-      </div>
-
       <div className="flex gap-2">
         <Button onClick={start} disabled={!file || running}>
           {running ? "Analysing…" : "Analyse video"}
@@ -324,9 +275,8 @@ export function LiveAnalysis() {
               style={{ width: `${uploading ? uploadPercent : progress}%` }}
             />
           </div>
-          {message && (
-            <p className="mt-2 text-xs text-muted-foreground">{message}</p>
-          )}
+          {/* No stage text: the bar already says the run is moving, and the
+              backend's wording is written for the log, not for a reader. */}
         </div>
       )}
 

@@ -3,7 +3,7 @@
 import { CheckCircle2Icon, LoaderIcon, TriangleAlertIcon } from "lucide-react";
 
 import { formatTime, stageLabel } from "@/lib/jobs";
-import { useChatStore } from "@/store/chat";
+import { useChatStore, useLiveAnalysis } from "@/store/chat";
 
 /**
  * The streamed analysis, rendered inside the conversation.
@@ -30,7 +30,7 @@ function categoryClasses(category: string): string {
 }
 
 export function LiveAnalysisCard() {
-  const live = useChatStore((s) => s.live);
+  const live = useLiveAnalysis();
   const command = useChatStore((s) => s.command);
 
   if (!live) return null;
@@ -71,9 +71,10 @@ export function LiveAnalysisCard() {
       )}
 
       <div className="space-y-3 px-3 py-2.5">
-        {live.message && (
-          <p className="text-xs text-muted-foreground">{live.message}</p>
-        )}
+        {/* The stage text is deliberately not rendered. The bar and the
+            percentage already say the run is moving, and the backend's own
+            wording named models and vendors — detail a viewer cannot act on.
+            `live.message` is still carried in the store for debugging. */}
 
         {/* Frames, as the worker extracts them */}
         {live.frames.length > 0 && (

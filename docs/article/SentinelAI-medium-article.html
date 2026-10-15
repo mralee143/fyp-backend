@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Six AI Models Watched the Same CCTV Clip</title>
+<style>@page { size: A4; margin: 19mm 17mm 17mm; }
+
+:root {
+  --ink:      #16191d;
+  --muted:    #5b6472;
+  --rule:     #dfe3e8;
+  --accent:   #b32d1f;
+  --good:     #16794a;
+  --good-bg:  #edf9f2;
+  --bad:      #b3261e;
+  --bad-bg:   #fdf0ee;
+  --code-bg:  #f6f7f9;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: #fff;
+  font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-size: 10.6pt;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+article { max-width: 100%; }
+
+/* ---------- headings ---------- */
+h1 {
+  font-size: 25pt;
+  line-height: 1.16;
+  letter-spacing: -0.3pt;
+  margin: 0 0 10pt;
+  font-weight: 700;
+}
+h2 {
+  font-size: 15pt;
+  line-height: 1.25;
+  margin: 26pt 0 8pt;
+  padding-top: 9pt;
+  border-top: 1.5pt solid var(--ink);
+  break-after: avoid;
+  page-break-after: avoid;
+}
+h3 {
+  font-size: 11.6pt;
+  margin: 16pt 0 5pt;
+  color: var(--ink);
+  break-after: avoid;
+  page-break-after: avoid;
+}
+/* the deck under the title */
+h1 + h3 {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 12.4pt;
+  line-height: 1.42;
+  color: var(--muted);
+  margin: 0 0 12pt;
+}
+
+p { margin: 0 0 9pt; orphans: 2; widows: 2; }
+a { color: var(--ink); text-decoration: none; border-bottom: 0.6pt solid #b9c0c9; }
+
+hr {
+  border: 0;
+  border-top: 0.8pt solid var(--rule);
+  margin: 17pt 0;
+}
+/* the byline sits between the deck and the first rule */
+h3 + p.lede {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 9.6pt;
+  color: var(--muted);
+  margin-bottom: 14pt;
+}
+p.lede { font-style: italic; color: var(--muted); }
+
+ul { margin: 0 0 10pt; padding-left: 16pt; }
+li { margin-bottom: 3.5pt; }
+
+strong { font-weight: 700; }
+
+/* ---------- code ---------- */
+code {
+  font-family: Consolas, "Cascadia Mono", "DejaVu Sans Mono", monospace;
+  font-size: 0.86em;
+  background: var(--code-bg);
+  padding: 0.8pt 3pt;
+  border-radius: 2.5pt;
+  border: 0.5pt solid #e6e9ed;
+}
+pre {
+  background: var(--code-bg);
+  border: 0.6pt solid #e2e6ea;
+  border-left: 2.5pt solid #9aa4b0;
+  border-radius: 3pt;
+  padding: 8pt 10pt;
+  margin: 10pt 0 12pt;
+  overflow: visible;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 8.3pt;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+pre.lang-python { border-left-color: #3b74b8; }
+
+/* ---------- blockquote: the article's pull-quotes ---------- */
+blockquote {
+  margin: 13pt 0;
+  padding: 10pt 13pt;
+  background: #fbfaf7;
+  border-left: 3pt solid var(--accent);
+  font-size: 11.4pt;
+  line-height: 1.48;
+  font-style: italic;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+blockquote strong { font-style: normal; }
+
+/* ---------- tables ---------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 11pt 0 13pt;
+  font-size: 9.4pt;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+th {
+  text-align: left;
+  border-bottom: 1.2pt solid var(--ink);
+  padding: 5pt 7pt;
+  font-size: 8.6pt;
+  text-transform: uppercase;
+  letter-spacing: 0.4pt;
+}
+td { border-bottom: 0.5pt solid var(--rule); padding: 5pt 7pt; vertical-align: top; }
+
+/* ---------- figures ---------- */
+figure { margin: 14pt 0 16pt; break-inside: avoid; page-break-inside: avoid; }
+figure.shot img {
+  display: block;
+  width: 100%;
+  border: 0.7pt solid #d8dde3;
+  border-radius: 3pt;
+}
+figcaption {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 8.5pt;
+  line-height: 1.45;
+  color: var(--muted);
+  margin-top: 5pt;
+  padding-left: 1pt;
+  border-left: 2pt solid var(--rule);
+  padding-left: 7pt;
+}
+
+/* ---------- hand-built diagrams ---------- */
+.diagram { font-family: "Segoe UI", system-ui, sans-serif; }
+
+.cascade { display: flex; gap: 9pt; align-items: stretch; }
+.panel {
+  flex: 1;
+  border: 0.8pt solid var(--rule);
+  border-radius: 4pt;
+  padding: 8pt 8pt 10pt;
+  text-align: center;
+  font-size: 8.2pt;
+  line-height: 1.34;
+}
+.panel-bad  { background: #fffbfa; border-color: #f0cfca; }
+.panel-good { background: #fafdfb; border-color: #c9e4d6; }
+.panel-head {
+  font-weight: 700;
+  font-size: 8.6pt;
+  margin-bottom: 7pt;
+  padding-bottom: 5pt;
+  border-bottom: 0.6pt solid var(--rule);
+}
+.panel-bad  .panel-head { color: var(--bad); }
+.panel-good .panel-head { color: var(--good); }
+.mark { font-size: 9.5pt; }
+
+.node {
+  background: #fff;
+  border: 0.7pt solid #ccd3db;
+  border-radius: 3pt;
+  padding: 4.5pt 5pt;
+  margin: 0 auto;
+}
+.node-bad    { border-color: #e8b4ad; background: var(--bad-bg); color: #7f1d1d; }
+.node-dim    { color: var(--muted); border-style: dashed; }
+.node-decide { border-color: #9aa4b0; font-weight: 600; }
+.verdict { font-weight: 700; margin-top: 2pt; }
+.verdict-bad  { background: var(--bad-bg);  border-color: #dd9a92; color: #7f1d1d; }
+.verdict-good { background: var(--good-bg); border-color: #9ed3b8; color: #14532d; }
+.verdict-dim  { color: var(--muted); border-style: dashed; }
+.verdict .sub { font-weight: 400; font-size: 7.2pt; color: inherit; opacity: 0.8; }
+
+.arrow { color: #8b95a1; font-size: 9pt; line-height: 1.1; padding: 2.5pt 0; }
+.arrow-bad  { color: #c4766b; }
+.arrow-good { color: #4f9e78; }
+.edge {
+  display: block;
+  font-size: 6.9pt;
+  color: var(--muted);
+  line-height: 1.25;
+  font-style: italic;
+}
+
+.split { display: flex; gap: 6pt; margin-top: 1pt; }
+.branch { flex: 1; display: flex; flex-direction: column; }
+.branch .node { font-size: 7.6pt; margin-bottom: 3pt; }
+
+/* pipeline */
+.pipe {
+  border: 0.8pt solid var(--rule);
+  border-radius: 4pt;
+  padding: 10pt;
+  background: #fcfcfd;
+  font-size: 8.2pt;
+}
+.pipe-row { display: flex; align-items: center; justify-content: center; gap: 5pt; flex-wrap: wrap; }
+.pnode {
+  border: 0.7pt solid #ccd3db;
+  border-radius: 3pt;
+  padding: 4.5pt 7pt;
+  background: #fff;
+  text-align: center;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.pnode .sub { font-weight: 400; font-size: 7pt; color: var(--muted); }
+.pnode-browser { background: #eef4fd; border-color: #b9cdea; color: #1e3a5f; }
+.pnode-api     { background: #edf9f2; border-color: #a9d8c1; color: #14532d; }
+.pnode-store   { background: #eef7fd; border-color: #b0d4ea; color: #0c4a6e; }
+.pnode-ext     { background: #fdf0ee; border-color: #e5b6ae; color: #7f1d1d; }
+.pedge { color: var(--muted); font-size: 7.2pt; font-style: italic; }
+.pipe-return {
+  text-align: center;
+  color: var(--good);
+  font-size: 7.8pt;
+  margin: 6pt 0 9pt;
+  padding: 3.5pt;
+  border: 0.6pt dashed #a9d8c1;
+  border-radius: 3pt;
+  background: #f5fbf8;
+}
+.pipe-stages {
+  border: 0.7pt solid #eadfc0;
+  background: #fffdf6;
+  border-radius: 3pt;
+  padding: 7pt 8pt;
+  margin-bottom: 9pt;
+}
+.stage-head {
+  font-weight: 700;
+  font-size: 8pt;
+  color: #713f12;
+  margin-bottom: 4.5pt;
+  text-align: center;
+}
+.stage { padding: 2.2pt 0; border-top: 0.5pt solid #f0e7cf; line-height: 1.35; }
+.stage:first-of-type { border-top: 0; }
+.pct {
+  display: inline-block;
+  min-width: 42pt;
+  font-weight: 700;
+  color: #9a6b12;
+  font-size: 7.4pt;
+}
+.stage code { font-size: 7.2pt; background: #f6f1e2; border-color: #eadfc0; }
+.stage .note { color: var(--bad); font-style: italic; font-size: 7.2pt; }
+.pipe-fanout { align-items: stretch; }
+.fanout { display: flex; flex-direction: column; gap: 4pt; }
+
+/* ---------- print fidelity ---------- */
+@media print {
+  a { border-bottom: none; }
+  h1 { break-after: avoid; }
+}
+</style></head><body><article><h1>Six AI Models Watched the Same CCTV Clip. Adding More Made It Worse.</h1>
+<h3>Building SentinelAI — a video threat detection platform — and the ensembling mistake that nearly sank it</h3>
+<p class="lede"><em>by <a href="https://medium.com/@metosys">@metosys</a></em></p>
+<hr>
+<p>A CCTV operator watches 30 cameras at once. Attention collapses after about 20 minutes — this is well documented, and it is the entire reason the surveillance industry exists in the shape it does. Cameras are cheap. Watching them is not.</p>
+<p>So for my final year project I built <strong>SentinelAI</strong>: upload a video, get back timestamped incidents — weapons, fighting, robbery, harassment — with the clip cut, the frames boxed, and a chat agent you can ask about it afterwards.</p>
+<figure class="shot"><img alt="SentinelAI landing page: &quot;Detect violence, crime &amp; weapons in video — automatically.&quot; with category cards for Fighting, Weapons, Explosives and Robbery" src="file:///C:/Users/ali/Desktop/fyp-backend/docs/shots/00-landing.png"><figcaption>The product in one line: upload footage, get timestamped threats.</figcaption></figure>
+<p>The part worth writing about is not the models. It is the mistake I made with them, because it was the kind of mistake that looks like good engineering right up until you check the output.</p>
+<hr>
+<h2>The setup</h2>
+<p>The stack, briefly, so the rest makes sense:</p>
+<ul><li><strong>FastAPI</strong> for the API, <strong>ARQ</strong> for the worker queue</li><li><strong>PostgreSQL 14</strong> via Prisma, <strong>Redis</strong> for queue + cache + pub/sub, <strong>MinIO</strong> for video, frames and clips</li><li><strong>Next.js 15</strong> front end</li><li><strong>Seven models</strong>: a YOLOv8n weapon detector, OWLv2 for zero-shot objects, two VideoMAE classifiers (violence, and UCF-Crime actions), Qwen2.5-VL 7B for local vision-language analysis, Qwen2.5 3B for chat, and Google Gemini as a hosted VLM</li></ul>
+<p>Everything ships in one 5.4 GB Docker image with all weights baked in. I verified it downloads nothing at runtime by loading every model in a container started with <code>--network none</code>.</p>
+<hr>
+<h2>The mistake: "first positive wins"</h2>
+<p>I had six detection backends. The obvious move — the one that feels like it should work — is to run them in sequence and take the first one that finds something. More models, more coverage, right?</p>
+<p>That is exactly what I built. It was the <code>auto</code> mode: run Gemini, then the violence classifier, then the action model, and return the first positive result.</p>
+<p>It performed terribly. Not "slightly noisy" — <strong>a clean video was almost impossible to report as clean.</strong></p>
+<p>Here is the failure, concretely. I fed it a clip of people playing with a ball. Gemini watched the whole video and correctly reported nothing. That verdict was thrown away the moment the next model in the chain — a binary violence classifier with no ability to abstain and no idea what it is actually looking at — saw fast human motion and guessed "violence."</p>
+
+<figure class="diagram">
+  <div class="cascade">
+    <div class="panel panel-bad">
+      <div class="panel-head"><span class="mark">&#10007;</span> What I built first &mdash; first positive wins</div>
+      <div class="node">Clip: people playing with a ball</div>
+      <div class="arrow">&darr;</div>
+      <div class="node">Gemini &mdash; <em>&ldquo;nothing here&rdquo;</em></div>
+      <div class="arrow arrow-bad">&darr;<span class="edge">negative discarded, keep looking</span></div>
+      <div class="node node-bad">Violence classifier &mdash; sees fast motion, guesses <em>&ldquo;violence&rdquo;</em></div>
+      <div class="arrow arrow-bad">&darr;<span class="edge">first positive wins</span></div>
+      <div class="node verdict verdict-bad">REPORT: violence detected</div>
+    </div>
+    <div class="panel panel-good">
+      <div class="panel-head"><span class="mark">&#10003;</span> What works &mdash; one model decides</div>
+      <div class="node">Clip: people playing with a ball</div>
+      <div class="arrow">&darr;</div>
+      <div class="node node-decide">Gemini &mdash; did it answer <em>at all</em>?</div>
+      <div class="split">
+        <div class="branch">
+          <div class="arrow arrow-good">&darr;<span class="edge">answered<br>(yes <em>or</em> no)</span></div>
+          <div class="node verdict verdict-good">REPORT: clear<br><span class="sub">verdict is final either way</span></div>
+        </div>
+        <div class="branch">
+          <div class="arrow">&darr;<span class="edge">could not answer<br>no key / no quota / error</span></div>
+          <div class="node node-dim">Violence classifier<br>&darr;<br>Action model &ge; 0.85</div>
+          <div class="node verdict verdict-dim">REPORT: best-effort fallback</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>The whole fix: the local classifiers became a fallback for
+  <em>silence</em>, not a second opinion on a verdict.</figcaption>
+</figure>
+
+<p>The bug is structural, and once you see it you cannot unsee it:</p>
+<blockquote><strong>A chain of models that takes the first positive only ever adds ways to say yes. It never adds a way to say no.</strong></blockquote>
+<p>Every stage you add can only increase the false positive rate. Six models chained this way don't vote — they take turns until one of them makes a mistake. With independent false positive rates of even 10% each, three stages gets you to roughly a 27% chance of inventing a crime in a clip of a children's birthday party.</p>
+<p>For a security product that is worse than useless. An operator who gets a false alarm on the third clip stops trusting the fourth.</p>
+<hr>
+<h2>The fix: decide which model is allowed to say no</h2>
+<p>The rewrite was smaller than the diagnosis. Gemini is the only backend in the system that actually <em>reads a scene</em> rather than pattern-matching pixels. So its answer is final — <strong>in both directions</strong>.</p>
+<pre class="lang-python"><code>async def _run_auto(video_path: Path, progress: ProgressFn) -&gt; dict:
+    """Cascade: Gemini, then violence classifier -&gt; action model as a fallback.
+
+    **Gemini decides when it runs.** The stages below it are a fallback for a
+    Gemini that could not answer, not a second opinion on one that did.
+    """
+    # 1) Gemini — it is the only one that understands the scene, so its
+    #    "nothing here" is worth as much as its "here it is": both final.
+    try:
+        result = await asyncio.to_thread(
+            detect_violence_llm, video_bytes=video_bytes, mime_type=mime
+        )
+        return result          # &lt;- returns even when it found nothing
+    except LlmDetectionError as exc:
+        logger.info("auto: Gemini skipped (%s)", str(exc)[:120])
+
+    # 2) and 3) only run when Gemini could not answer at all.</code></pre>
+<p>The local classifiers now only run when Gemini genuinely could not answer — no API key, exhausted quota, a network failure. They are a <strong>fallback for silence</strong>, not a second opinion on a verdict.</p>
+<p>The distinction sounds pedantic. It is the whole ballgame.</p>
+<figure class="shot"><img alt="SentinelAI dashboard showing 9 total scans, 7 threats found, 2 clear, with a list of recent scans. One row reads &quot;VID-20260716-WA0072.mp4 — The video is a animated promotional text graphic displaying brand messaging and contains no safety incidents&quot;, tagged llm and marked Clear. Three rows analyse the same phone-snatching compilation with the auto, llm and violence backends" src="file:///C:/Users/ali/Desktop/fyp-backend/docs/shots/02-dashboard.png"><figcaption>Two arguments in one screen — a promotional graphic correctly marked <em>Clear</em>, and the same phone-snatching clip run through three different backends.</figcaption></figure>
+<p>That dashboard shows both halves of the argument at once.</p>
+<p>The row marked <strong>Clear</strong> is an animated promotional graphic — text on a moving background. Under the old cascade this was exactly the kind of clip that got flagged, because <em>something</em> was moving. Now Gemini's "contains no safety incidents" is the answer, and it survives to the report.</p>
+<p>The three rows analysing the same phone-snatching compilation show why. Run through the <code>violence</code> classifier, the summary reads <strong>"Detected violence across 2 segment(s)."</strong> Run through Gemini, it reads <strong>"Compilation showing multiple incidents of phone and bag snatching by individuals on bicycles, e-bikes, and scooters."</strong></p>
+<p>Both flagged it. Only one of them knows what happened. That asymmetry is the justification for letting one model overrule five.</p>
+<h3>The retry logic that turned out to be a correctness fix</h3>
+<p>This reframing had a consequence I did not anticipate. Gemini's free tier returns <code>503 high demand</code> fairly often, and it clears in seconds. I had originally treated retrying it as a robustness nicety.</p>
+<p>Once the cascade meant "Gemini failing hands the verdict to the least reliable model in the system," retrying became a <strong>correctness</strong> issue:</p>
+<pre class="lang-python"><code># Retrying matters more here than the usual robustness argument. The cascade
+# treats "Gemini could not answer" as permission to fall through to the local
+# classifiers, and those are the ones that call a clip of a ball a fight. So a
+# blip that lasts two seconds did not degrade the answer, it changed who gave
+# it — silently, and to the least reliable model in the system.
+_RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})</code></pre>
+<p>There was a second trap underneath it. I wrote the usual exponential backoff — 2s, 4s, 8s — and it failed every time under rate limiting. Google's 429 response carries a <code>RetryInfo</code> field telling you how long to actually wait, and for a rate-limited call it routinely asks for ~32 seconds. Doubling from two seconds never reaches that; it just fails four times in fifteen seconds and reports defeat.</p>
+<p>So: honour the number the server gives you, and cap it at 45s — past that, the local model answering now beats Gemini answering in two minutes.</p>
+<hr>
+<h2>One event is one incident</h2>
+<p>The second thing that made the output unusable had nothing to do with accuracy. The models were right and the report was still wrong.</p>
+<p>Ask Gemini to watch a 20-second fight and it returns:</p>
+<pre><code>"pushing"   3.0 – 7.0
+"punching"  5.0 – 9.0
+"assault"   4.0 – 11.0</code></pre>
+<p>Three rows. All three correct. The UI rendered three incident cards and three overlapping bands on the timeline — and an operator reads that as <strong>three separate fights</strong>.</p>
+<p>So there is a consolidation pass. Rows that overlap, or sit within a gap threshold of each other, are merged into the single event they describe, and the most confident row wins the story:</p>
+<blockquote><em>The merged incident keeps that row's label, category and description; the span is the union, and the peak is where the winning row sat. Averaging descriptions would invent a sentence no model wrote.</em></blockquote>
+<p>That last line is a rule I would defend anywhere near an LLM pipeline. It is tempting to blend outputs into one smooth summary. Don't — you produce text that no model actually asserted, and you can no longer trace any claim back to its source.</p>
+<p>The peak second matters beyond the prose, too. It is where the cover frame gets captured. A merged 3.0–11.0 span has a midpoint of 7.0, which may well be the lull <em>between</em> two blows. The winning row's own centre is the moment a model was actually looking at.</p>
+<figure class="shot"><img alt="SentinelAI results page for a 7 minute 41 second dashcam compilation. A red banner reads &quot;Incident detected — compilation of various traffic collisions and vehicle accidents captured on dashcams.&quot; Below the video player, a timeline reads &quot;8 flagged sections · 36.0s of 7:41&quot; with eight narrow bands spread across it" src="file:///C:/Users/ali/Desktop/fyp-backend/docs/shots/06-results-incident.png"><figcaption>Eight collisions across 7:41, narrowed to 36 seconds of timeline. The operator scrubs 8% of the footage.</figcaption></figure>
+<p>This is what consolidation buys you, and the line under the player is the whole product in one number: <strong>36 seconds flagged out of 7 minutes 41</strong>.</p>
+<p>Eight distinct collisions, each narrowed to a band you can click. An operator scrubs 8% of the footage instead of watching all of it. Without the merge pass those eight events were closer to thirty bands, and "thirty things happened in this video" is not a finding — it is a second video to review.</p>
+<h3>Flagging everything is flagging nothing</h3>
+<p>The related failure: a model that marks the entire clip as an incident. Technically a positive; practically it tells the operator to watch all of it, which is the same as telling them nothing.</p>
+<p>Anything exceeding a coverage ceiling gets pulled back to the moment of peak confidence — and the report says so in plain language rather than quietly narrowing the span behind the user's back:</p>
+<pre class="lang-python"><code>note = (" The model flagged the entire clip, so the marked section is"
+        " where it was most certain.")</code></pre>
+<p>Honest hedging beats a confident-looking span you silently rewrote.</p>
+<hr>
+<h2>Making a slow pipeline feel fast</h2>
+<p>A vision model takes anywhere from five seconds to several minutes. A browser cannot sit on that request, and a spinner for two minutes reads as a crash.</p>
+<p>Upload returns <code>202 Accepted</code> with a job ID in about a second, before any model has run. The worker then streams progress over Server-Sent Events.</p>
+
+<figure class="diagram">
+  <div class="pipe">
+    <div class="pipe-row">
+      <div class="pnode pnode-browser">Browser</div>
+      <div class="pedge">POST /detection/jobs &rarr;</div>
+      <div class="pnode pnode-api">FastAPI</div>
+      <div class="pedge">enqueue &rarr;</div>
+      <div class="pnode pnode-store">Redis<br><span class="sub">ARQ queue</span></div>
+    </div>
+    <div class="pipe-return">&larr; <strong>202 {job_id}</strong> in ~1s &mdash; no model has run yet</div>
+    <div class="pipe-stages">
+      <div class="stage-head">ARQ worker picks it up</div>
+      <div class="stage"><span class="pct">5&ndash;30%</span> sample frames &rarr; <code>frame.ready</code>
+        <span class="note">before any model loads</span></div>
+      <div class="stage"><span class="pct">30&ndash;70%</span> run the detection backend</div>
+      <div class="stage"><span class="pct">70&ndash;90%</span> cut clips, draw boxes &rarr; <code>segment.ready</code></div>
+      <div class="stage"><span class="pct">90&ndash;100%</span> caption &rarr; <code>job.completed</code></div>
+    </div>
+    <div class="pipe-row pipe-fanout">
+      <div class="pnode pnode-store">Postgres<br><span class="sub">job_events<br>append-only</span></div>
+      <div class="pedge">one log, two transports</div>
+      <div class="fanout">
+        <div class="pnode pnode-browser">SSE &rarr; browser</div>
+        <div class="pnode pnode-ext">HMAC POST &rarr; your server</div>
+      </div>
+    </div>
+  </div>
+  <figcaption>Byte-identical payloads on both transports &mdash; only the delivery
+  differs, because a browser cannot receive an inbound callback.</figcaption>
+</figure>
+
+<p>The trick that mattered most was <strong>ordering the work by when the user can see it</strong>. Decoding a dozen preview frames takes under a second. So the worker samples, uploads and announces frames <em>before</em> it loads any model:</p>
+<pre><code> 0.0s  job.queued
+ 0.0s  job.started
+ 1.0s  frame.ready    7%   &lt;- first image on screen
+ 2.1s  frame.ready   30%   &lt;- all 12 frames on screen
+ 2.2s  job.progress  40%   YOLO starts
+ 7.6s  job.completed 100%</code></pre>
+<p>Real content at 1.0s instead of a spinner until 7.6s. The total time is identical. The experience is not.</p>
+<h3>One event log, two transports</h3>
+<p>Every event is appended to a <code>job_events</code> table, and that table is the single source of truth. Redis pub/sub fans it out to browsers over SSE; the same rows go to registered webhook endpoints as HMAC-signed POSTs.</p>
+<p>A browser and a webhook consumer receive <strong>byte-identical payloads</strong> — only the transport differs, because a browser cannot receive an inbound HTTP callback.</p>
+<p>Each event carries a per-job <code>sequence</code>, sent as the SSE <code>id:</code>. When a connection drops, the browser resends it as <code>Last-Event-ID</code> and the server replays only what came after. One detail worth stealing: the subscription is opened <em>before</em> history is replayed, which closes the window where an event published between the two steps would be lost forever.</p>
+<hr>
+<h2>What a classifier structurally cannot do</h2>
+<p>One detection category forced an architectural decision: <strong>harassment</strong>.</p>
+<p>I could not make it work with classifiers, and eventually understood why. Harassment is about intent, consent and persistence. None of those is an object, and none is a pose. The UCF-Crime dataset the action model is fine-tuned on does not even have a <code>harassment</code> label — there is no output neuron to light up.</p>
+<table><thead><tr><th>Capability</th><th>Models that can do it</th></tr></thead><tbody><tr><td>Weapons as objects</td><td>YOLOv8n, OWLv2</td></tr><tr><td>Arbitrary objects</td><td>OWLv2</td></tr><tr><td>Actions over time (fighting, robbery)</td><td>VideoMAE action, VideoMAE violence</td></tr><tr><td><strong>Harassment</strong> (needs intent)</td><td><strong>Gemini, Qwen2.5-VL only</strong></td></tr></tbody></table>
+<p>This is the real argument for putting a vision-<em>language</em> model in a CCTV pipeline. Not that it is better at spotting a knife — YOLO is faster and 2,500× smaller at that. It is that an entire class of incidents is only expressible in language.</p>
+<h3>The cost of keeping it local</h3>
+<p>I wanted a keyless fallback, so Qwen2.5-VL 7B runs in-image as a last resort. Measured honestly:</p>
+<ul><li><strong>16.6 GB</strong> on disk, <strong>~17 GB</strong> RAM when loaded, pushing peak requirements to 32 GB</li><li>Minutes per clip on CPU, versus seconds for Gemini</li><li>It sees <strong>8 frames at 512×384</strong> — not the video</li></ul>
+<p>That frame budget is the real gap. An incident that happens between two sampled frames is simply invisible to it. You can raise the count for better recall at a roughly linear cost in inference time, which on CPU gets expensive fast.</p>
+<p>Writing those numbers down changed the design: the local VLM became an opt-in build flag rather than a default. Setting <code>INCLUDE_QWEN_VL=false</code> drops 16.6 GB from the image.</p>
+<hr>
+<h2>The agents, and the one that writes SQL</h2>
+<p>Three LLM agents sit on top of the pipeline: an orchestrator you chat with, a per-scan Q&amp;A agent grounded in one video's incidents and frames, and a database analyst that turns plain English into SQL over your past scans.</p>
+<p>That last one is the one people get nervous about, correctly. The safety model is not "ask the model nicely not to write a DELETE."</p>
+<p>The generated statement runs on top of a fixed CTE prelude that is itself scoped to the caller — <code>$1</code> is always the user id, injected by the server, never by the model. The model writes a <code>SELECT</code> against a small curated view and nothing else. Then it is validated before it runs:</p>
+<pre class="lang-python"><code>if not sql.lower().startswith("select"):
+    raise DbAgentError("Only SELECT statements are allowed.")
+...
+if not _LIMIT.search(sql):
+    sql = f"{sql} LIMIT {MAX_ROWS}"</code></pre>
+<p>Single statement, read-only, row-capped, and the data it can even reach is pre-filtered to one user. The model's output is treated as untrusted input, because that is exactly what it is.</p>
+<p>The orchestrator also gets presentation tools, which turned out to matter more than I expected. <code>control_video_playback</code> drives the browser's player and <code>show_frame_at</code> captures a still at one timestamp — so when you ask "what happened at 3:20?" the agent can <em>show you the frame</em> rather than describing it back in prose. An answer you can see beats an answer you have to trust.</p>
+<p>One more recommendation for anyone shipping agents: <strong>every system prompt lives in a <code>.md</code> file</strong>, not a string constant.</p>
+<pre><code>agentic/prompts/
+├── orchestrator/system.md
+├── db_agent/{schema,sql_system,insight_system}.md
+└── scan_chat/{system,segment}.md</code></pre>
+<p>Prompt wording is the single biggest lever on answer quality, and it is the thing you iterate on most. Keeping it as text means reword a rule, restart the API, done — no code change, and a readable git diff of exactly how the agent's instructions evolved.</p>
+<hr>
+<h2>Shipping it: one image, five processes</h2>
+<p>An FYP that only runs on the machine it was built on is a demo, not a project. The deployment target was "one command on a fresh box."</p>
+<p>The backend image bundles PostgreSQL, Redis, MinIO, the API and the ARQ worker, supervised by <code>supervisor</code>, with every model weight baked into its own build stage:</p>
+<pre class="lang-powershell"><code>docker compose up -d --build</code></pre>
+<p>Two containers, and <code>docker compose logs -f backend</code> gives you all five processes in one interleaved stream. The first build takes 30–50 minutes — torch, transformers and ~2.1 GB of weights — but the weights live in a separate stage, so changing code or even <code>requirements.txt</code> never re-downloads them.</p>
+<p>Two decisions I would repeat:</p>
+<p><strong>Pin the database major version to match the data directory.</strong> The image ships PostgreSQL 14 specifically because Debian 13 would give 17, which cannot read a 14 data directory in place. That is a silent, unrecoverable-looking failure the first time you meet it.</p>
+<p><strong>Make the cache TTL shorter than the credential it carries.</strong> Cached report payloads embed presigned MinIO URLs. The cache TTL is 120s; the signature lifetime is 3600s. Deliberately far apart, so a cache hit can never hand the browser a dead link. Invalidation bumps a per-user generation counter with a single <code>INCR</code>, which logically expires every key for that user without scanning the keyspace.</p>
+<p>Redis is optional everywhere else: if it is down, cached loaders run directly, SSE falls back to polling <code>job_events</code>, and only the queue genuinely stops working.</p>
+<figure class="shot"><img alt="SentinelAI admin dashboard showing total users, total scans and threats detected, a 14-day line chart of scans versus threats, and a threat-ratio donut" src="file:///C:/Users/ali/Desktop/fyp-backend/docs/shots/11-admin.png"><figcaption>Admin view: scan volume and threat ratio over the last 14 days.</figcaption></figure>
+<hr>
+<h2>What I would tell myself at the start</h2>
+<p><strong>More models is not more accuracy.</strong> It is more surface area for error, unless you have decided explicitly what each one is allowed to overrule. Ensembling requires a combination rule. "First hit wins" is not a combination rule; it is a maximum-noise function.</p>
+<p><strong>Decide which model can say no.</strong> Most classifiers cannot abstain. A model that can only vote yes should never get the last word.</p>
+<p><strong>Correct output is not usable output.</strong> Three accurate rows describing one fight is a wrong report. Most of my work after the models started functioning was turning true statements into something a human could act on.</p>
+<p><strong>Latency is about ordering, not speed.</strong> I never made the models faster. I moved the cheap visible work to the front, and the system felt transformed.</p>
+<p><strong>Measure resource costs before you design around a model.</strong> "Local 7B VLM as a fallback" sounded free. It was 16.6 GB and a jump from 8 GB of RAM to 32 GB.</p>
+<p><strong>Treat your own model's output as untrusted input.</strong> Especially when it writes SQL.</p>
+<hr>
+<p class="lede"><em>SentinelAI was built as a final year project: FastAPI, Prisma, PostgreSQL, Redis, MinIO, ARQ and Next.js, with YOLOv8n, OWLv2, VideoMAE, Qwen2.5-VL and Gemini.</em></p>
+<p><em>Written by <strong><a href="https://medium.com/@metosys">@metosys</a></strong>. If you are building something similar and want detail on any part of the pipeline — the cascade, the SSE resume logic, or the SQL agent's sandbox — leave a comment and I will go deeper in a follow-up.</em></p></article></body></html>

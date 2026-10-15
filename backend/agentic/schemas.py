@@ -20,6 +20,13 @@ class ChatSessionOut(BaseModel):
     video_name: Optional[str] = None
     video_url: Optional[str] = None
     last_scan_id: Optional[int] = None
+    job_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Analysis job queued for the attached video, if any. Present so a "
+            "chat reopened in a fresh page load can rejoin a run in flight."
+        ),
+    )
     message_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -44,6 +51,19 @@ class ChatSessionDetail(BaseModel):
     video_name: Optional[str] = None
     video_url: Optional[str] = None
     last_scan_id: Optional[int] = None
+    job_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Analysis job queued for the attached video, if any. Poll "
+            "/jobs/{job_id} or reconnect to its event stream to resume "
+            "progress after a page reload."
+        ),
+    )
+    job_status: Optional[str] = Field(
+        default=None,
+        description="Live status of `job_id` (QUEUED/RUNNING/SUCCEEDED/FAILED).",
+    )
+    job_progress: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     messages: list[ChatMessageOut] = []

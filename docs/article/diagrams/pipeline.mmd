@@ -1,0 +1,47 @@
+---
+title: Upload to report without blocking the browser
+---
+flowchart LR
+
+BROWSER["🌐 Browser"]
+API["⚙️ FastAPI"]
+MINIO[("MinIO<br/>video bytes")]
+PG[("Postgres<br/>job_events<br/>append-only")]
+REDIS[("Redis<br/>ARQ queue<br/>+ pub/sub")]
+
+subgraph WORKER["🔧 ARQ worker"]
+  direction TB
+  W1["5–30%<br/>sample frames → frame.ready<br/><b>before any model loads</b>"]
+  W2["30–70%<br/>run detection backend"]
+  W3["70–90%<br/>cut clips + draw boxes"]
+  W4["90–100%<br/>caption → job.completed"]
+  W1 --> W2 --> W3 --> W4
+end
+
+HOOK(["Your server<br/>HMAC-signed POST"])
+
+BROWSER -- "POST /detection/jobs" --> API
+API --> MINIO
+API --> PG
+API == "enqueue" ==> REDIS
+API -- "202 {job_id}<br/>~1s, no model has run" --> BROWSER
+
+REDIS == "dequeue" ==> WORKER
+WORKER --> PG
+WORKER --> MINIO
+WORKER -- "emit" --> REDIS
+
+REDIS -. "SSE: frame.ready at 1.0s" .-> BROWSER
+PG -. "same rows, other transport" .-> HOOK
+
+classDef browser fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a5f
+classDef api     fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
+classDef worker  fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#713f12
+classDef store   fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
+classDef ext     fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+
+class BROWSER browser
+class API api
+class W1,W2,W3,W4 worker
+class PG,REDIS,MINIO store
+class HOOK ext

@@ -14,8 +14,14 @@ from transformers import (
     Qwen2_5_VLForConditionalGeneration,
 )
 
-HF_TOKEN = os.getenv("HF_TOKEN")
-QWEN_MODEL_ID = os.getenv("QWEN_MODEL_ID", "Qwen/Qwen2.5-VL-7B-Instruct")
+# A blank HF_TOKEN in .env is "no token", not an empty one: passed through as
+# "", huggingface_hub sends `Authorization: Bearer ` and requests refuses it
+# ("Illegal header value b'Bearer '"), so every model download fails even
+# though the repos are public.
+HF_TOKEN = os.getenv("HF_TOKEN") or None
+QWEN_MODEL_ID = os.getenv("QWEN_MODEL_ID") or os.getenv(
+    "QWEN_VL_MODEL_ID", "Qwen/Qwen2.5-VL-7B-Instruct"
+)
 VIDEO_MODEL_ID = os.getenv(
     "VIDEO_MODEL_ID", "MCG-NJU/videomae-base-finetuned-kinetics"
 )
